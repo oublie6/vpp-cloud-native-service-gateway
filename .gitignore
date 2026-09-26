@@ -1,0 +1,41 @@
+# Go
+/bin/
+/dist/
+*.test
+*.out
+coverage.out
+
+# VPP / build outputs
+/build/
+/build-root/
+*.o
+*.a
+*.so
+
+# Runtime / temporary files
+*.log
+*.pid
+*.sock
+*.tmp
+*.pcap
+__pycache__/
+*.pyc
+
+# IDE / editor
+.vscode/
+.idea/
+.DS_Store
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+kubeconfig
+kubeconfig.*
+*.pem
+*.key
+*.crt
+
+# Local experiment state
+/tmp/
+/run/
