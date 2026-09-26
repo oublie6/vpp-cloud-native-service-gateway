@@ -1,0 +1,525 @@
+# AGENTS.md
+
+本文件定义 `vpp-cloud-native-service-gateway` 仓库中 Codex / Agent 的长期工作规则。
+
+项目目标不是快速堆功能，而是以可解释、可测试、可追溯的方式完成：
+
+> **Kubernetes Service / EndpointSlice -> Go Controller -> GoVPP -> VPP Service Dataplane**
+
+后续 Agent 必须优先遵守本文，而不是根据单次提示词自行扩大范围。
+
+---
+
+## 1. 协作模式
+
+本项目默认工作流：
+
+~~~text
+ChatGPT
+-> 设计 Goal / 学习重点 / 验收标准
+
+Codex
+-> 同步最新 main
+-> 阅读 Goal
+-> 实现
+-> 测试
+-> 文档
+-> focused commit
+
+ChatGPT
+-> 阅读最新代码和证据
+-> 解释机制
+-> 验收
+-> 决定下一 Goal
+~~~
+
+Codex 不得自行创建下一 Goal，不得在完成当前 Goal 后继续“顺手扩展”。
+
+---
+
+## 2. 每次执行前必须同步 Git
+
+每次任务开始前必须执行：
+
+~~~bash
+git status --short
+git branch --show-current
+git fetch origin
+git pull --ff-only origin main
+~~~
+
+规则：
+
+- 必须基于远端最新 `main`；
+- 工作区存在未提交修改时，不允许覆盖、丢弃、自动 stash；
+- `git pull --ff-only` 失败、分叉或冲突时立即停止并报告；
+- 禁止 `git reset --hard`；
+- 禁止 force push；
+- 禁止未经确认的 rebase；
+- 禁止覆盖用户本地未提交内容。
+
+同步后重新阅读：
+
+~~~text
+AGENTS.md
+README.md
+当前 Goal
+docs/architecture.md（存在时）
+相关上一 Goal 验收记录
+~~~
+
+不能依赖旧 clone、旧聊天上下文或旧 Goal 继续开发。
+
+---
+
+## 3. 当前项目边界
+
+### 3.1 Go 是控制面，不是 packet hot path
+
+目标：
+
+~~~text
+Go controller
+-> GoVPP
+-> VPP Binary API
+-> VPP dataplane
+~~~
+
+禁止重新实现：
+
+~~~text
+Go
+-> cgo
+-> 自己写 rte_eth_rx_burst/rte_eth_tx_burst
+~~~
+
+前序 DPDK 项目已经完成这部分学习，本项目必须转向 VPP 架构。
+
+### 3.2 VPP owns dataplane
+
+packet parse、FIB、adjacency、feature、CNAT/service、worker graph 等优先使用 VPP 现有框架。
+
+只有当前 Goal 明确要求时才新增自定义 VPP plugin。
+
+禁止为了“证明会写 C”而重写：
+
+- FIB；
+- ARP / neighbor；
+- CNAT/NAT；
+- 完整 Service LB；
+- 通用 graph engine。
+
+### 3.3 GoVPP 是正式控制边界
+
+Go 与 VPP 主要通过：
+
+- Binary API；
+- generated binapi / RPC；
+- Stats API；
+- 必要时 event/notification。
+
+禁止大量依赖 `vppctl` shell command 作为正式控制面实现。
+
+CLI 可用于学习、debug、trace、验收交叉检查；项目控制面最终必须通过 GoVPP/Binary API。
+
+---
+
+## 4. 版本与 API 兼容性
+
+VPP / GoVPP API 会变化。
+
+每个涉及 GoVPP bindings 的 Goal 必须明确记录：
+
+~~~text
+VPP version
+GoVPP version / module version
+Go version
+OS / kernel
+Kubernetes version（进入 K8s 阶段后）
+~~~
+
+原则：
+
+- 优先使用稳定 release，不默认追 `master`；
+- GoVPP bindings 必须与实际 VPP API schema 匹配；
+- 如需自行生成 binapi，必须记录 API JSON 来源和生成命令；
+- 不允许为了编译通过随机升级/降级依赖；
+- 版本调整必须写入 Goal 实现记录；
+- 涉及当前版本、安装命令、CNAT API 等内容时，先查官方文档或实际安装环境，不凭旧博客猜测。
+
+---
+
+## 5. 第一阶段 I/O 边界
+
+当前主要运行环境是普通云服务器 / 虚拟机。
+
+第一阶段允许：
+
+- TAP；
+- AF_PACKET；
+- memif；
+- Linux network namespace；
+- software VPP dataplane。
+
+第一阶段禁止为了性能展示主动引入：
+
+- VFIO；
+- 管理网卡 bind/unbind；
+- hardware RSS/RETA；
+- SmartNIC；
+- RDMA；
+- cross-NUMA tuning。
+
+以后如果有真实 NIC，必须单独设计硬件 Goal。
+
+software benchmark 只能表述为 software evidence，禁止写成 line-rate 或真实 NIC 性能。
+
+---
+
+## 6. Kubernetes 集成原则
+
+进入 Kubernetes 阶段后，必须采用 desired-state / reconcile 模型：
+
+~~~text
+Service informer
+EndpointSlice informer
+        |
+        v
+internal desired state
+        |
+        v
+reconciler
+        |
+        v
+GoVPP operations
+        |
+        v
+VPP actual state
+~~~
+
+要求：
+
+- add/update/delete 幂等；
+- duplicate event 不应破坏状态；
+- event 顺序变化不能让状态永久错误；
+- VPP 重启/GoVPP reconnect 后可以重新 reconcile；
+- 不把 Kubernetes informer callback 直接写成一长串不可恢复的命令式 VPP 操作。
+
+### kube-proxy coexistence
+
+项目早期必须使用隔离 VPP test VIP 或其他明确流量引导方式。
+
+禁止在同一个节点上让 kube-proxy 和 VPP 同时拥有同一个 VIP，而不说明冲突处理。
+
+不允许第一阶段全局关闭 kube-proxy，除非当前 Goal 已经证明 CoreDNS、API Service 等关键依赖不会被破坏。
+
+---
+
+## 7. VPP 学习重点
+
+Agent 在实现功能时，需要保留足够证据支持学习：
+
+~~~text
+vlib / vnet
+vector / frame / buffer
+graph / node / next node
+worker
+feature arc
+FIB
+adjacency
+DPO
+CNAT / Service
+Binary API
+Stats API
+packet trace
+~~~
+
+如果一个 Goal 只是“CLI 能 ping 通”，但无法解释 packet 经过哪些 graph/node 或 control state 如何写入 VPP，则不算完整学习成果。
+
+---
+
+## 8. 自定义 VPP plugin 规则
+
+自定义 plugin 是后置学习内容，不是项目起点。
+
+只有在：
+
+1. 已理解现有 VPP graph/feature；
+2. 主 Service dataplane 已经跑通；
+3. 当前能力确实无法通过现有 VPP feature/plugin 完成；
+
+或者当前 Goal 明确用于学习 plugin 开发时，才写 plugin。
+
+首个 plugin 应保持很小，例如：
+
+- service stats；
+- classify / mark；
+- observability feature node。
+
+plugin 必须至少包含：
+
+- node registration；
+- frame/buffer traversal；
+- next-node 逻辑；
+- trace 或 counter；
+- Binary API（如果有控制参数）；
+- GoVPP 调用测试。
+
+---
+
+## 9. 代码风格
+
+优先级：
+
+~~~text
+清晰
+> 可解释
+> 可测试
+> 再考虑微优化
+~~~
+
+### Go
+
+- 避免过度抽象；
+- 不为未来可能需求提前设计复杂 interface hierarchy；
+- 小型命名 helper 优于深层匿名函数；
+- error 必须带上下文；
+- context lifecycle 明确；
+- informer / reconciler 状态转换要可测试；
+- 避免 reflection / metaprogramming；
+- 不为“高级感”引入没必要的 generic abstraction。
+
+### C / VPP plugin
+
+- 仅在 plugin Goal 中出现；
+- packet hot path 代码要直接、顺序清晰；
+- pointer arithmetic、buffer access、next-node 选择必须有解释性 helper 或注释；
+- 不做未经 benchmark 支持的微优化；
+- ownership / buffer lifetime 必须明确。
+
+---
+
+## 10. 文档与注释语言
+
+说明性内容默认中文：
+
+- README；
+- AGENTS；
+- Goal；
+- architecture；
+- troubleshooting；
+- Go/C/Shell 解释性注释。
+
+identifier、API/type/function name、VPP/GoVPP 固有术语、command、log field、protocol name 保持英文。
+
+例如 frame / vector / node / FIB / adjacency / DPO / CNAT / feature arc 无需强行翻译。
+
+---
+
+## 11. 测试原则
+
+每个 Goal 至少要有与范围匹配的验证层级。
+
+基础：
+
+~~~text
+gofmt
+go test ./...
+go vet ./...
+~~~
+
+如有 shell/python：
+
+~~~text
+bash -n
+python3 -m py_compile
+~~~
+
+VPP/GoVPP Goal 不能只验证程序 exit code，至少检查：
+
+- VPP process / API socket；
+- GoVPP connection；
+- API reply；
+- VPP actual state；
+- 必要的 packet E2E；
+- cleanup。
+
+Kubernetes Goal 至少检查：
+
+- informer event；
+- desired state；
+- reconcile；
+- VPP actual state；
+- packet behavior；
+- delete / restart / reconnect。
+
+---
+
+## 12. 失败路径
+
+不要只写 happy path。随着项目推进，逐步覆盖：
+
+- VPP 未启动；
+- API socket 不存在；
+- GoVPP disconnect；
+- VPP restart；
+- incompatible API；
+- invalid desired state；
+- Service 删除；
+- Backend 删除；
+- duplicate event；
+- partial reconcile failure；
+- Kubernetes watch reconnect。
+
+失败时不允许悄悄产生“Go 认为成功但 VPP 实际失败”的永久分歧。
+
+---
+
+## 13. 性能与 benchmark
+
+本项目重点先是 architecture correctness。
+
+做 benchmark 时必须记录：
+
+- VPP version；
+- I/O backend；
+- worker count；
+- CPU / NUMA；
+- packet size；
+- flow count；
+- offered load；
+- RX/TX/drop；
+- vector rate / node counters（可行时）；
+- generator 类型；
+- 是否经过 Linux kernel/TAP。
+
+禁止把 TAP / AF_PACKET / Python generator 结果解释成 VPP line-rate 或 DPDK hardware performance。
+
+---
+
+## 14. Git 与提交
+
+每个 Goal 应形成 focused commit。
+
+建议格式：
+
+~~~text
+vpp: ...
+govpp: ...
+controller: ...
+test: ...
+docs: ...
+~~~
+
+禁止一次提交混入无关重构、格式化全仓库、依赖大升级、多个未验收 Goal、大日志 / pcap / binary / build output。
+
+提交前：
+
+~~~bash
+git diff --check
+git status --short
+~~~
+
+并检查 secrets、token、kubeconfig、证书和 host-specific 敏感数据。
+
+---
+
+## 15. Goal 文档要求
+
+Goal 放在 `docs/goals/`。
+
+每个 Goal 至少写清楚：
+
+1. 背景；
+2. 要学习的机制；
+3. 要实现的功能；
+4. 明确 non-goals；
+5. 环境/版本；
+6. 实现边界；
+7. 验收命令；
+8. 必须证明的运行证据；
+9. Codex 实现记录；
+10. ChatGPT 验收结论。
+
+没有真实运行证据时，不允许把 Goal 标为完成。
+
+---
+
+## 16. 推荐演进路线
+
+~~~text
+Goal 001
+VPP + GoVPP environment baseline
++ VPP start
++ API socket
++ ShowVersion
++ interface / trace basics
+
+        ↓
+
+Goal 002
+VPP graph / frame / node / worker
++ packet trace
++ two-interface L3 forwarding
+
+        ↓
+
+Goal 003
+GoVPP FIB / interface programming
++ dynamic route add/delete
++ stats
+
+        ↓
+
+Goal 004
+VPP CNAT / Service baseline
++ VIP -> backend
++ TCP/UDP
++ dynamic backend
+
+        ↓
+
+Goal 005
+Go Service model + reconciler
++ idempotent VPP state management
+
+        ↓
+
+Goal 006
+Kubernetes Service / EndpointSlice watcher
++ desired state -> VPP
+
+        ↓
+
+Goal 007
+Two-node local / remote backend
++ scale in/out
++ restart/reconnect
+
+        ↓
+
+Goal 008
+Observability / benchmark / troubleshooting
+
+        ↓
+
+Goal 009（可选）
+small custom VPP plugin
++ GoVPP custom Binary API
+~~~
+
+实际 Goal 可以合并或调整，但必须由 ChatGPT 根据前一阶段学习结果决定。
+
+---
+
+## 17. 当前状态
+
+~~~text
+Repository bootstrap        ✅
+README / AGENTS             ✅
+Goal 001                    ⬜ 待 ChatGPT 设计
+~~~
+
+当前不要自行开始 Kubernetes controller、CNAT 实现或 VPP plugin。
+
+下一步只等待 Goal 001。
