@@ -9,7 +9,10 @@ Repository bootstrap        ✅
 
 Goal 001
 VPP / GoVPP Environment Baseline
-状态：⬜ 待 ChatGPT 设计
+状态：🟡 已设计，待 Codex 实现与 ChatGPT 验收
+
+当前 Goal：
+`docs/goals/001-vpp-govpp-environment-baseline.md`
 ~~~
 
 推荐路线：
