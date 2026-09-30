@@ -228,69 +228,77 @@ Phase 4
 
 ## 5. 学习路线
 
+本项目采用 **5 个较大的 Goal**，减少频繁切换任务，让每个阶段包含更多机制学习、源码理解、实验验证和工程实现。
+
 ~~~text
 Goal 001
-VPP + GoVPP environment baseline
-+ 固定版本
-+ 启动 VPP
-+ API socket
-+ ShowVersion
-+ interface / trace basics
+VPP Runtime / GoVPP / Graph / L3 Forwarding
++ 固定版本与环境
++ VPP 启动 / CLI / Binary API socket
++ GoVPP ShowVersion
++ interface / graph / node / frame / worker
++ TAP / network namespace
++ two-interface L3 forwarding
++ FIB / DPO / adjacency
++ packet trace / counters
 
         ↓
 
 Goal 002
-VPP graph / frame / node / worker
-+ packet trace
-+ two-interface L3 forwarding
+GoVPP Control Plane / FIB / Stats / CNAT Service
++ interface / route programming
++ FIB add/delete
++ Stats API
++ CNAT Translation / Backend / Session
++ VIP -> multiple backends
++ TCP / UDP
++ Maglev / session stickiness
++ reverse path / session lifecycle
++ dynamic backend add/delete
 
         ↓
 
 Goal 003
-GoVPP FIB / interface programming
-+ dynamic route add/delete
-+ stats
+Go Service Model / Reconciler / Kubernetes Integration
++ desired state / actual state
++ idempotent reconcile
++ reconnect / recovery
++ Service informer
++ EndpointSlice informer
++ Kubernetes -> Go -> GoVPP -> VPP
 
         ↓
 
 Goal 004
-VPP CNAT / Service baseline
-+ VIP -> backend
-+ TCP/UDP
-+ dynamic backend
+Two-Node Service Dataplane / Recovery / Observability
++ local / remote backend
++ scale in / scale out
++ Service / Backend delete
++ VPP restart
++ GoVPP reconnect
++ controller restart
++ trace / counters / stats
++ troubleshooting
++ software benchmark
 
         ↓
 
 Goal 005
-Go Service model + reconciler
-+ idempotent VPP state management
-
-        ↓
-
-Goal 006
-Kubernetes Service / EndpointSlice watcher
-+ desired state -> VPP
-
-        ↓
-
-Goal 007
-Two-node local / remote backend
-+ scale in/out
-+ restart/reconnect
-
-        ↓
-
-Goal 008
-Observability / benchmark / troubleshooting
-
-        ↓
-
-Goal 009（可选）
-small custom VPP plugin
-+ GoVPP custom Binary API
+Small Custom VPP Plugin / Finalization
++ node registration
++ frame / buffer traversal
++ next-node
++ feature arc
++ trace / counters
++ custom Binary API
++ GoVPP custom API
++ architecture / troubleshooting / benchmark docs
++ final project summary
 ~~~
 
-Goal 可以根据实际版本、现有 VPP 能力和上一阶段验收结果调整或合并，但不得跳过机制学习直接堆最终功能。
+所有 5 个 Goal 都计划完成，Goal 005 不再作为可选项。
+
+Goal 可以根据实际版本和实验结果调整内部 stage，但不得跳过机制学习直接堆最终功能。
 
 ---
 
@@ -423,7 +431,7 @@ VPP Cloud-Native Service Gateway
 
 下一步不是直接写 Kubernetes controller。
 
-**Goal 001 应从 VPP/GoVPP 环境基线开始：固定版本、启动 VPP、验证 CLI/trace、GoVPP 连接和最小 Binary API 调用。**
+**Goal 001 从 VPP/GoVPP 环境基线开始，并继续完成 graph/node/frame/worker 学习、软件接口拓扑、两接口 L3 forwarding、FIB/DPO/adjacency 与真实 packet trace。**
 
 Goal 001 已设计：`docs/goals/001-vpp-govpp-environment-baseline.md`。
 
