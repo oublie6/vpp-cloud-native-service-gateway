@@ -441,7 +441,14 @@ bash -n scripts/goal001/*.sh
 ## 12. Codex 实现记录
 
 ### Stage 1
-状态：⬜ 待实现
+状态：🟡 Codex 已实现并提交，待 ChatGPT 学习/工程验收
+
+- 原生 Ubuntu 20.04 / kernel `5.4.0-216-generic` / amd64；主机 Go 已升级到 `1.24.13`。focal 官方 release APT 仓库最高稳定 VPP 为 `24.10-release`，与优先目标 `26.06` 有版本偏差；固定 GoVPP `v0.13.0`。
+- 新增独立 VPP startup config、环境检查和启停脚本，以及通过 `govpp.Connect` 和生成的 `vpe` RPC client 发出 `ShowVersion` 的 Go probe。socket 路径可由 `-api-socket` 或 `VPP_API_SOCKET` 指定。
+- 本机 VPP API JSON 与 GoVPP 的 `ShowVersionReply` CRC 一致；真实 API socket 请求成功。完整命令与实际输出见 `results/goal001/README.md`。
+- CLI socket 提供 `vppctl` 的文本调试入口；Binary API socket 提供 GoVPP 的消息接口。`govpp.Connect` 用 socketclient 建立连接；`Connection` 管理底层连接，API Channel/RPC client 承载请求与响应。`ShowVersion` request 经消息名和 CRC 匹配 VPP schema，reply 通过 context 对应请求。schema/CRC 不匹配时可能无法解析消息或请求失败，不能用 CLI 假装成功。
+- 本阶段只检查 VPP runtime 和控制 API，不接 NIC、也不转发 packet，因此不需要 DPDK NIC。`vppctl` 可交叉检查状态，但正式 Go 控制面使用 Binary API，可获得类型化回复和明确错误。
+- 包安装曾自动启动默认服务并设置 HugePages；已停用默认服务、将当前及持久配置的 HugePages 值恢复为 0。后续使用独立实例，未配置 NIC、VFIO、路由或 firewall。
 
 ### Stage 2
 状态：⬜ 待实现
