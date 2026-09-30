@@ -1,106 +1,75 @@
-# Goal 001：VPP / GoVPP Environment Baseline
+# Goal 001：VPP Runtime / GoVPP / Graph / L3 Forwarding
 
-## 1. 背景
+## 1. Goal 定位
 
-本 Goal 是 `vpp-cloud-native-service-gateway` 的第一个工程 Goal。
+这是项目的第一个完整工程学习阶段。
 
-前序理论阶段已经建立以下模型：
+本 Goal 不再只做“环境搭建”，而是从 VPP/GoVPP 最小控制链开始，一直推进到真实软件接口 L3 forwarding 和 packet trace。
+
+最终要把此前理论中的：
 
 ```text
 Go Controller
 -> GoVPP
 -> VPP Binary API
--> VPP dataplane
+-> VPP runtime
+
+packet
+-> interface input
+-> frame
+-> node
+-> ip4 lookup
+-> FIB
+-> DPO
+-> adjacency
+-> rewrite
+-> interface output
 ```
 
-本阶段不进入 CNAT、Kubernetes Service 或复杂转发逻辑，而是先建立一个可重复、可诊断、版本可追溯的 VPP / GoVPP 最小真实运行闭环。
+全部映射到真实代码、CLI state、packet trace 和 counters。
 
-完成后需要能够回答并用运行证据证明：
-
-1. 当前主机运行的 VPP 是什么版本；
-2. VPP 如何启动、CLI 如何连接；
-3. Binary API socket 在哪里；
-4. GoVPP 如何连接这个 socket；
-5. `ShowVersion` request/reply 如何完成；
-6. VPP 当前有哪些 interface、基本 graph/node/trace 命令如何观察；
-7. VPP 未启动或 API socket 不存在时，Go 程序如何明确失败；
-8. 当前 GoVPP bindings 与实际 VPP API 是否至少能完成本 Goal 所需的兼容性验证。
+本 Goal 采用 **分 Stage 学习**，Codex 不应一次性把所有内容实现完。
 
 ---
 
-## 2. 学习目标
+## 2. 总体学习目标
 
-### 2.1 VPP runtime baseline
+完成后应能够解释并用真实证据证明：
 
-理解并验证：
-
-```text
-vpp process
--> startup.conf
--> runtime dir
--> CLI socket
--> Binary API socket
--> plugins
--> interfaces / nodes / counters
-```
-
-重点不是记命令，而是明确：
-
-- CLI socket 与 Binary API socket 是两条不同控制通道；
-- `vppctl` 用于 debug / trace / 交叉验证；
-- GoVPP 通过 Binary API 与 VPP 通信；
-- interface / node / trace 是后续 packet path 验证的观测入口。
-
-### 2.2 GoVPP connection baseline
-
-理解并验证：
-
-```text
-Go process
--> govpp.Connect(api.sock)
--> socketclient
--> Binary API handshake
--> API channel
--> ShowVersion request
--> ShowVersionReply
-```
-
-至少能解释：
-
-- socket path 从哪里来；
-- connection 与 API channel 的关系；
-- request/reply 如何匹配；
-- API message name/CRC 不兼容时为什么会失败；
-- 为什么正式控制面不能依赖 shell 调 `vppctl`。
+1. VPP process、startup config、CLI socket、Binary API socket 的关系；
+2. GoVPP 如何通过 Binary API 调用 `ShowVersion`；
+3. VPP 的 hw interface / sw interface 基本关系；
+4. TAP / Linux namespace / VPP interface 如何组成软件实验拓扑；
+5. packet 进入 VPP 后如何形成 frame，并由 node 批处理；
+6. graph edge、next node 与 worker 的关系；
+7. 为什么同一 worker 内 graph forwarding 不等于跨 CPU pipeline；
+8. IPv4 route 如何从 RIB/FIB 解析成 LB DPO / adjacency 等 dataplane state；
+9. neighbor 未解析时为何会出现 glean / incomplete adjacency；
+10. packet 如何完成 L2 rewrite 并从 output interface 发出；
+11. packet trace、interface counter、node counter、error counter 分别能证明什么。
 
 ---
 
 ## 3. 版本策略
 
-### 3.1 VPP
+### VPP
 
-优先目标：
+优先使用稳定 release line，不追 master。
+
+当前目标优先：
 
 ```text
-VPP 26.06 stable/release line
+VPP 26.06
 ```
 
-原因：
+如果实际 OS / 官方 package source 无法可靠获得该版本：
 
-- 本项目需要稳定、可复现的基线；
-- 不追 VPP master；
-- 后续 CNAT / Binary API 学习需要固定 schema。
+- 先记录环境和失败原因；
+- 使用当前官方可获得的最近稳定版本；
+- 在 evidence 中明确偏差；
+- 不允许为了“装上就行”随机切换版本。
 
-如果当前 OS / 官方 package repository 无法可靠安装 26.06：
-
-1. 不允许随机换版本直到“能跑”；
-2. 记录 OS、package repository 和失败原因；
-3. 选择当前官方可获得的最近稳定 release；
-4. 在 Goal 实现记录中明确偏差及原因。
-
-禁止直接使用 `master` 作为默认基线。
-
-### 3.2 GoVPP
+### GoVPP
 
 首选：
 
@@ -108,369 +77,354 @@ VPP 26.06 stable/release line
 go.fd.io/govpp v0.13.0
 ```
 
-但必须把“能编译”与“API schema 兼容”分开验证。
+但必须通过真实 VPP API 验证 schema compatibility。
 
-本 Goal 只要求：
+后续如果出现 message CRC / schema mismatch：
 
-- 能连接实际 VPP Binary API socket；
-- `ShowVersion` request/reply 成功；
-- 记录 GoVPP module version；
-- 记录所使用 binapi package 的来源。
+- 不通过 shell CLI 绕过；
+- 优先使用目标 VPP 对应 API JSON 重新生成 bindings；
+- 记录来源与生成命令。
 
-如果 v0.13.0 的 bundled binapi 与 VPP 26.06 在本 Goal 已出现 message CRC/API mismatch，则：
+### Environment evidence
 
-- 不允许通过 shell 命令绕过；
-- 优先使用实际 VPP 安装/源码对应的 API JSON 重新生成 bindings；
-- 记录 API JSON 来源与生成命令；
-- 固定生成结果和依赖版本。
+必须记录：
 
-后续 Goal 003/004 在使用 route/CNAT API 前必须再次检查 schema 匹配。
-
-### 3.3 Go / OS / kernel
-
-不在 Goal 文档中猜主机环境。
-
-Codex 首先采集：
-
-```bash
-cat /etc/os-release
-uname -a
-go version || true
-```
-
-最终 evidence 必须记录：
-
-- OS distribution / version；
+- OS；
 - kernel；
-- CPU architecture；
-- Go version；
-- VPP version；
-- GoVPP version。
+- arch；
+- Go；
+- VPP；
+- GoVPP；
+- VPP runtime/socket paths。
 
 ---
 
-## 4. 实现范围
+# Stage 1：VPP Runtime + GoVPP Binary API Baseline
 
-### 4.1 Environment inspection
+## 4. Stage 1 目标
 
-新增一个小型脚本，例如：
+建立：
+
+```text
+Go vpp-probe
+-> GoVPP
+-> Binary API socket
+-> VPP
+-> ShowVersionReply
+```
+
+### 实现
+
+建议新增：
 
 ```text
 scripts/goal001/inspect-env.sh
-```
-
-输出必要环境信息：
-
-- OS / kernel / arch；
-- Go；
-- VPP package/version；
-- VPP process；
-- CLI socket；
-- Binary API socket；
-- VPP runtime directory。
-
-脚本不得修改系统状态。
-
-### 4.2 VPP baseline config
-
-在仓库中保存最小、可解释的 VPP 配置模板，例如：
-
-```text
+scripts/goal001/start-vpp.sh
+scripts/goal001/stop-vpp.sh
 deploy/vpp/startup-goal001.conf
+cmd/vpp-probe/main.go
+results/goal001/README.md
 ```
-
-目标：
-
-- 可以在普通云服务器/VM 上启动；
-- 不绑定管理网卡；
-- 不要求 VFIO / hugepage / DPDK NIC；
-- 保留 Binary API；
-- 允许 CLI 观察；
-- 路径、日志和 runtime directory 明确。
-
-不要为了 Goal 001 开启不需要的复杂 plugin 或性能参数。
-
-### 4.3 VPP lifecycle helper
-
-允许新增小型脚本帮助：
-
-- 检查配置；
-- 启动测试 VPP；
-- 检查 process；
-- 检查 sockets；
-- 停止测试实例；
-- cleanup Goal 001 自己创建的 runtime artifact。
-
-不得：
-
-- kill 用户已有未知 VPP instance；
-- 改默认路由；
-- bind/unbind NIC；
-- 改 firewall；
-- 改系统 HugePages/VFIO。
-
-### 4.4 GoVPP minimal client
-
-新增最小 Go 程序，建议：
-
-```text
-cmd/vpp-probe/
-```
-
-要求：
-
-- API socket path 可通过 flag 或 environment 指定；
-- 默认值可以指向常见路径，但不得把 host-specific 路径写死；
-- 使用 GoVPP 正式 API；
-- 发起 `ShowVersion`；
-- 输出至少：
-  - VPP program/version；
-  - build date；
-  - build directory（如果 reply 提供）；
-  - GoVPP version；
-  - API socket path；
-- error 必须带上下文；
-- process exit code 在失败时非 0。
-
-禁止通过：
-
-```text
-exec.Command("vppctl", ...)
-```
-
-模拟 Binary API client。
-
-### 4.5 CLI / interface / graph / trace baseline
-
-本 Goal 不要求真实双口 L3 forwarding，但必须熟悉最小观测命令并保存结果摘要。
-
-至少检查：
-
-```text
-show version
-show interface
-show hardware
-show runtime
-show node counters
-show errors
-show plugins
-```
-
-trace 部分要求：
-
-- 能启用/清除 trace；
-- 如果没有合适 ingress packet，可以只证明 trace control 命令可用；
-- 不允许编造 packet trace。
-
-Goal 002 再建立 two-interface packet path 并要求真实 packet trace。
-
----
-
-## 5. 明确 Non-goals
-
-Goal 001 不做：
-
-- Kubernetes controller；
-- Service / EndpointSlice；
-- CNAT / NAT；
-- VIP -> backend；
-- route programming；
-- two-interface L3 forwarding；
-- network namespace 拓扑；
-- custom VPP plugin；
-- DPDK PMD / VFIO；
-- RSS / RETA；
-- NUMA tuning；
-- throughput benchmark；
-- kube-proxy replacement。
-
-如果执行过程中发现这些方向的机会，只记录为 follow-up，不顺手实现。
-
----
-
-## 6. 建议仓库结构
-
-完成后预计至少出现：
-
-```text
-.
-├── cmd/
-│   └── vpp-probe/
-│       └── main.go
-├── deploy/
-│   └── vpp/
-│       └── startup-goal001.conf
-├── scripts/
-│   └── goal001/
-│       ├── inspect-env.sh
-│       ├── start-vpp.sh
-│       └── stop-vpp.sh
-├── docs/
-│   └── goals/
-│       ├── README.md
-│       └── 001-vpp-govpp-environment-baseline.md
-├── results/
-│   └── goal001/
-│       └── README.md
-├── go.mod
-└── go.sum
-```
-
-具体文件可根据实际环境小幅调整，但不得扩大 Goal 范围。
-
----
-
-## 7. 实现步骤
-
-### Step 0：同步仓库
-
-严格执行 `AGENTS.md`：
-
-```bash
-git status --short
-git branch --show-current
-git fetch origin
-git pull --ff-only origin main
-```
-
-若存在用户未提交修改、分叉或 pull 失败，停止并报告，不自动处理。
-
-重新阅读：
-
-- `AGENTS.md`
-- `README.md`
-- `docs/goals/README.md`
-- 本 Goal
-
-### Step 1：采集当前环境
-
-采集并记录：
-
-```bash
-cat /etc/os-release
-uname -a
-uname -m
-go version || true
-which vpp || true
-vpp --version || true
-dpkg -l | grep -E '^ii +vpp' || true
-rpm -qa | grep -i '^vpp' || true
-```
-
-不要先安装再记录旧状态。
-
-### Step 2：确认安装来源并固定 VPP
-
-根据实际 OS 使用 FD.io 当前官方支持的 package/source 流程。
-
-目标优先 VPP 26.06。
-
-安装或构建方式必须记录：
-
-- repository/source；
-- exact version；
-- package list 或 commit/tag；
-- startup config path。
-
-如果当前环境已经存在合适 VPP，优先复用并记录，不做无意义重装。
-
-### Step 3：启动隔离测试 VPP
 
 要求：
 
 - 不接管管理 NIC；
-- 明确 PID；
-- 明确 CLI socket；
-- 明确 Binary API socket；
-- 能通过 CLI 查看 version/interface/runtime；
-- cleanup 可控。
+- 不配置 VFIO；
+- 不修改 HugePages；
+- 不要求 DPDK PMD；
+- API socket path 可配置；
+- `vpp-probe` 必须使用 GoVPP Binary API；
+- 禁止用 `exec.Command("vppctl")` 模拟控制面。
 
-必须证明：
+### Stage 1 evidence
 
-```bash
-ps ...
-ls -l <api socket>
-vppctl ... show version
-```
-
-实际命令根据最终 runtime path 调整。
-
-### Step 4：建立 Go module 和 vpp-probe
-
-程序最小职责：
+至少包括：
 
 ```text
-parse api socket
--> connect
--> create API channel/client
--> ShowVersion
--> print structured result
--> close cleanly
-```
-
-保持代码直接，不提前抽象 controller/reconciler interface。
-
-### Step 5：验证成功路径
-
-至少：
-
-```bash
+OS / kernel / arch
+Go version
+VPP exact version
+GoVPP version
+VPP process
+CLI socket
+Binary API socket
+show version
+show interface
+show runtime
+show errors
+vpp-probe success
+invalid api.sock failure + non-zero exit
 go test ./...
 go vet ./...
-go run ./cmd/vpp-probe --api-socket <actual socket>
+bash -n scripts/goal001/*.sh
 ```
 
-输出必须来自真实 VPP reply，不得 hard-code。
+### Stage 1 学习检查点
 
-### Step 6：验证失败路径
+Codex 完成 Stage 1 后停止。
 
-至少验证一次：
+ChatGPT 重点讲解：
 
-```text
-invalid/nonexistent API socket
--> connect fails
--> clear contextual error
--> non-zero exit
-```
-
-如停止 VPP 验证 disconnect 会破坏当前环境，可使用不存在 socket 路径完成本 Goal 的失败路径。
-
-### Step 7：CLI / graph / trace baseline
-
-保存紧凑 evidence：
-
-- `show version`；
-- `show interface`；
-- `show runtime`；
-- `show node counters` 或等价当前版本命令；
-- `show errors`；
-- trace enable/clear 的实际可用命令；
-- Binary API socket 文件；
-- vpp-probe output。
-
-大日志不要提交。
-
-### Step 8：文档和 cleanup
-
-在 `results/goal001/README.md` 记录：
-
-- Environment；
-- Versions；
-- Startup method；
-- API socket；
-- GoVPP invocation；
-- Success evidence；
-- Failure evidence；
-- CLI observations；
-- Limitations；
-- Cleanup；
-- Open questions。
+- CLI socket vs Binary API socket；
+- `govpp.Connect` / socketclient；
+- connection / channel / request context；
+- message name + CRC；
+- request / reply matching；
+- 为什么 CLI 是 debug plane 而 GoVPP 是正式控制边界。
 
 ---
 
-## 8. 验收标准
+# Stage 2：Software Interface Topology
 
-### 8.1 Repository
+## 5. Stage 2 目标
+
+建立安全的软件接口实验拓扑。
+
+优先使用：
+
+```text
+Linux namespace
+<-> TAP / AF_PACKET / host-interface
+<-> VPP
+<-> TAP / AF_PACKET / host-interface
+<-> Linux namespace
+```
+
+具体 I/O backend 根据当前 VPP 版本、主机能力和实现复杂度决定，但必须：
+
+- 不接管管理 NIC；
+- 不改变默认路由；
+- cleanup 可重复；
+- 每个接口、namespace、IP 都可解释；
+- 所有创建动作都有对应删除动作。
+
+### Stage 2 学习内容
+
+重点理解：
+
+- Linux TAP 是什么；
+- VPP hw interface vs sw interface；
+- interface index；
+- admin up/down；
+- L2/L3 interface state；
+- packet 从 Linux fd/device 进入 VPP 的边界；
+- 为什么普通云服务器仍可完成软件 dataplane 学习。
+
+### Stage 2 evidence
+
+至少：
+
+- Linux namespace/interface topology；
+- VPP `show interface`；
+- Linux `ip link` / `ip addr`；
+- setup/cleanup scripts；
+- cleanup 后主机状态恢复。
+
+完成后停止，进行学习验收。
+
+---
+
+# Stage 3：Two-Interface L3 Forwarding
+
+## 6. Stage 3 目标
+
+让真实 packet 穿过 VPP。
+
+示意：
+
+```text
+ns-client
+  |
+ interface A
+  |
+ VPP
+  |
+ interface B
+  |
+ns-server
+```
+
+配置：
+
+- 两侧 IPv4 subnet；
+- VPP interface addresses；
+- 必要 route；
+- neighbor resolution；
+- client -> server ping / UDP packet。
+
+不能只验证“ping 通”，还必须观察 forwarding state。
+
+### Stage 3 学习内容
+
+重点解释：
+
+```text
+RIB intent
+-> FIB entry
+-> Load-Balance DPO
+-> adjacency
+-> rewrite
+-> output
+```
+
+以及：
+
+- connected route；
+- attached prefix；
+- glean adjacency；
+- neighbor adjacency；
+- incomplete -> complete；
+- ARP 请求为什么不是原业务 packet 等待；
+- complete adjacency 保存什么 rewrite state。
+
+### Stage 3 evidence
+
+至少：
+
+- route table；
+- FIB state；
+- neighbor state；
+- adjacency state；
+- ping / UDP E2E；
+- interface RX/TX counters；
+- packet capture（如需要，仅保存紧凑证据）。
+
+完成后停止，进行学习验收。
+
+---
+
+# Stage 4：Graph / Frame / Node / Worker + Packet Trace
+
+## 7. Stage 4 目标
+
+把 Stage 3 已经跑通的真实 packet 用 VPP trace 还原。
+
+至少捕获一条成功 forwarding path。
+
+要求能够从 trace 中辨认主要阶段，例如：
+
+```text
+interface/device input
+-> ethernet/input
+-> ip4-input
+-> ip4-lookup
+-> forwarding/DPO path
+-> rewrite/output
+```
+
+实际 node 名称以当前 VPP 版本真实 trace 为准，不硬编码预期。
+
+### Stage 4 学习内容
+
+重点解释：
+
+- `vlib_buffer_t`；
+- buffer index；
+- vector；
+- frame；
+- node function；
+- next node；
+- graph runtime；
+- worker；
+- node graph vs DPO graph；
+- frame 在 node 之间传递的是 buffer indices，不是 packet payload copy；
+- VPP graph 为什么仍然保持 RTC/cache locality；
+- 什么情况下才会 handoff / frame queue 到其他 worker。
+
+### Stage 4 evidence
+
+至少：
+
+- `show runtime`；
+- `show node counters` 或版本对应命令；
+- packet trace；
+- interface counters；
+- error counters；
+- worker/thread state；
+- 对 trace 各关键 node 的中文解释。
+
+---
+
+## 8. Goal 001 Non-goals
+
+本 Goal 不进入：
+
+- GoVPP route programming；
+- Stats API 正式封装；
+- CNAT / NAT；
+- VIP / backend；
+- Kubernetes；
+- Service / EndpointSlice；
+- reconciler；
+- two-node；
+- throughput benchmark；
+- DPDK NIC / VFIO；
+- RSS/RETA；
+- custom VPP plugin。
+
+CLI 可以用于配置 Stage 2/3 实验拓扑，因为当前重点是 dataplane 机制。
+
+从 Goal 002 开始，route/service 等正式控制操作逐步切换为 GoVPP。
+
+---
+
+## 9. 工程约束
+
+- 所有 host/network 修改必须最小化并可 cleanup；
+- 不允许修改管理 NIC ownership；
+- 不允许修改主机默认路由；
+- 不允许关闭系统 firewall 作为“解决方案”；
+- 不允许为了 ping 通做无法解释的 sysctl 大改；
+- 不允许提交 credentials、private key、kubeconfig；
+- 大 pcap / 大日志不提交；
+- software evidence 不表述为 hardware performance。
+
+---
+
+## 10. Codex 工作节奏
+
+这是一个大 Goal，但 **禁止一次性全部完成**。
+
+执行顺序固定：
+
+```text
+Stage 1
+-> Codex 实现
+-> 提交 focused commit
+-> 输出 evidence
+-> STOP
+
+ChatGPT 学习验收
+
+Stage 2
+-> implement
+-> evidence
+-> STOP
+
+ChatGPT 学习验收
+
+Stage 3
+-> implement
+-> evidence
+-> STOP
+
+ChatGPT 学习验收
+
+Stage 4
+-> implement
+-> evidence
+-> STOP
+
+ChatGPT 最终验收 Goal 001
+```
+
+除非用户明确要求，否则 Codex 不允许提前实现后续 Stage。
+
+---
+
+## 11. 每个 Stage 的通用验收
+
+至少：
 
 ```bash
 git diff --check
@@ -480,116 +434,57 @@ go vet ./...
 bash -n scripts/goal001/*.sh
 ```
 
-如果某命令因实际文件布局不适用，需要在实现记录说明。
-
-### 8.2 VPP runtime
-
-必须有真实证据证明：
-
-- VPP process 正在运行；
-- exact VPP version 已记录；
-- CLI 可连接；
-- Binary API socket 存在；
-- `show version` 成功；
-- `show interface` 成功；
-- runtime/node/error 基础信息可读取。
-
-### 8.3 GoVPP
-
-必须有真实证据证明：
-
-```text
-vpp-probe
--> connect actual api.sock
--> ShowVersion request
--> ShowVersionReply
--> print actual VPP version
-```
-
-同时验证不存在 socket 时返回明确错误和非 0 exit。
-
-### 8.4 Explanation
-
-Codex 实现记录必须能够解释：
-
-1. CLI socket 与 Binary API socket 的区别；
-2. `govpp.Connect` 到 socketclient 的关系；
-3. connection / API channel / request-reply 的关系；
-4. `ShowVersion` 为什么是一个真正的 Binary API 调用，而不是 CLI wrapper；
-5. API message CRC/schema mismatch 的意义；
-6. 为什么本阶段不用 DPDK NIC 仍然可以验证 VPP/GoVPP 控制链；
-7. Goal 001 与 Goal 002 的边界。
+以及当前 Stage 对应的真实 runtime evidence。
 
 ---
 
-## 9. 必须提供的 evidence
+## 12. Codex 实现记录
 
-最终实现记录至少贴出紧凑输出：
-
-```text
-A. git status / branch / HEAD
-B. OS + kernel + arch
-C. Go version
-D. VPP exact version
-E. GoVPP exact version
-F. VPP process
-G. CLI socket / Binary API socket
-H. show version
-I. show interface
-J. show runtime / node counters / errors 的关键摘要
-K. vpp-probe success output
-L. vpp-probe invalid-socket failure output + exit code
-M. go test ./...
-N. go vet ./...
-O. bash -n ...
-P. cleanup result
-```
-
-禁止只写“已验证通过”。
-
----
-
-## 10. Codex 实现记录
-
+### Stage 1
 状态：⬜ 待实现
 
-实现完成后补充：
+### Stage 2
+状态：⬜ 待实现
 
-- 日期；
-- commit；
-- 环境；
-- 版本；
-- 关键设计；
-- 测试；
-- evidence；
-- 偏差；
-- open questions。
+### Stage 3
+状态：⬜ 待实现
+
+### Stage 4
+状态：⬜ 待实现
 
 ---
 
-## 11. ChatGPT 验收结论
+## 13. ChatGPT 学习 / 工程验收
 
+### Stage 1
 状态：⬜ 未验收
 
-只有在读取最新远端代码和真实运行 evidence 后才能修改。
+### Stage 2
+状态：⬜ 未验收
+
+### Stage 3
+状态：⬜ 未验收
+
+### Stage 4
+状态：⬜ 未验收
+
+### Goal 001 总体验收
+状态：⬜ 未验收
 
 ---
 
-## 12. 下一步
+## 14. Goal 001 完成后的下一步
 
-Goal 001 验收通过后进入：
+进入：
 
-> **Goal 002：VPP graph / frame / node / worker + two-interface L3 forwarding + packet trace**
+> **Goal 002：GoVPP Control Plane / FIB / Stats / CNAT Service**
 
-Goal 002 将第一次把理论中的：
+重点从“观察和 CLI 建立 dataplane”升级到：
 
 ```text
-interface input
--> frame
--> node
--> ip4 lookup
--> DPO / adjacency
--> output
+Go intent
+-> GoVPP
+-> Binary API
+-> VPP FIB / CNAT state
+-> packet fast path
 ```
-
-映射到真实 packet trace 和 interface/node counters。
