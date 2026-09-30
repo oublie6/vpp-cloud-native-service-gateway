@@ -464,7 +464,21 @@ bash -n scripts/goal001/*.sh
 ## 13. ChatGPT 学习 / 工程验收
 
 ### Stage 1
-状态：⬜ 未验收
+状态：✅ 已验收通过
+
+验收结论（2026-09-30）：
+
+- 已确认最新实现提交为 `cefb5f813b692d6fc2f491ad52499913e9a3812b`。
+- `vpp-probe` 真实使用 `govpp.Connect` 连接独立 Binary API socket，并通过生成的 `vpe` RPC client 完成 `ShowVersion` request/reply；未使用 `vppctl` shell wrapper 冒充 Binary API。
+- API socket 路径支持 flag / environment 覆盖；不存在 socket 时返回带上下文错误并以非 0 状态退出。
+- VPP 使用独立 runtime、CLI socket、Binary API socket 和 pidfile；启停脚本会检查进程身份，未接管管理 NIC，也未配置 VFIO/DPDK NIC。
+- 已提供真实 `show version`、`show interface`、`show runtime`、`show errors`、成功/失败 GoVPP 调用以及 `go test` / `go vet` / shell syntax evidence。
+- VPP 版本因 Ubuntu 20.04/focal 官方 release package 可用性采用 `24.10-release`，而不是优先目标 `26.06`；该偏差已记录且本 Stage 的 `ShowVersion` message CRC 与实际 API schema 已核对成功。该兼容性结论仅覆盖当前已验证 API，不外推到后续 route/CNAT API。
+- 非阻塞 caveat：VPP package postinst 曾自动设置 HugePages=1024，但安装前未记录原始 HugePages 值。当前运行值与持久配置均已恢复为 0，因此不阻塞 Stage 2；后续凡是可能修改 host state 的安装/实验必须在动作前先采集原值，并在 cleanup 后逐项比对恢复。
+
+工程验收：通过。
+
+下一步先进行 Stage 1 学习讲解与理解确认，再进入 Stage 2。
 
 ### Stage 2
 状态：⬜ 未验收
