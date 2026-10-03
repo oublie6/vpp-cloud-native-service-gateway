@@ -157,3 +157,31 @@ $ ip -br link show eth0; ip -br addr show eth0
 eth0 UP d8:88:ef:00:01:c6 ...
 eth0 UP 10.0.138.51/24 ...
 ```
+
+## Stage 3：两接口 IPv4 转发（2026-10-03 UTC）
+
+在 Stage 2 的 TAP 拓扑上执行 `scripts/goal001/setup-topology.sh` 与 `configure-forwarding.sh`。后者将 `tap101=10.10.1.1/24`、`tap102=10.10.2.1/24` 设为 up，并仅在两个 namespace 内配置 default gateway；重复执行成功。宿主 `default via 10.0.138.1 dev eth0` 不变。
+
+ARP/业务流量前的真实状态：`show interface addr` 显示上述两侧 L3 地址；namespace route 分别为 `default via 10.10.1.1 dev g001tapc` 和 `default via 10.10.2.1 dev g001taps`。`show ip neighbors` 为空，`show adj` 仅有两侧的 `ipv4-glean`；`show ip fib` 的 `10.10.1.0/24`、`10.10.2.0/24` 均经单 bucket `dpo-load-balance` 指向对应 `ipv4-glean`。自动 IPv6 multicast 已使两个 TAP 各有约 7 个 RX/drop，`show errors` 中有 14 个 `null-node blackholed packets`，并非本次 IPv4 转发的基准零值。
+
+首次 `ping -c 3 10.10.2.2` 发出 3 个、收到 2 个（首包触发 ARP/glean 后丢失）；随后邻居已解析，`scripts/goal001/test-forwarding.sh` 的 ICMP 为 `3 transmitted, 3 received, 0% packet loss`。UDP 用 Python socket 从 client 发 `goal001-udp` 到 server `10.10.2.2:19001`，server 回 `goal001-ack`，client 收到来自 `10.10.2.2:19001` 的确认；双向应用层内容均核对成功。
+
+```text
+$ vppctl -s /run/vpp-goal001/cli.sock show ip fib 10.10.2.0/24
+entry-flags:connected,attached; cfg-flags:glean; tap102
+forwarding: dpo-load-balance index:12 -> ipv4-glean tap102
+$ vppctl -s /run/vpp-goal001/cli.sock show ip fib 10.10.2.2/32
+entry-flags:attached; oper-flags:resolved; 10.10.2.2 tap102
+forwarding: dpo-load-balance index:17 -> ipv4 via 10.10.2.2 tap102
+rewrite: 02febf0f391c02fe15d833b30800
+$ vppctl -s /run/vpp-goal001/cli.sock show ip neighbors
+10.10.1.2 D 02:fe:01:62:9d:cf tap101
+10.10.2.2 D 02:fe:bf:0f:39:1c tap102
+$ vppctl -s /run/vpp-goal001/cli.sock show adj
+[@4] ipv4 via 10.10.1.2 tap101 ... 02fe01629dcf02fe1385c84f0800
+[@5] ipv4 via 10.10.2.2 tap102 ... 02febf0f391c02fe15d833b30800
+```
+
+`02febf0f391c` 是 server Linux TAP MAC，`02fe15d833b3` 是 VPP tap102 MAC，`0800` 是 IPv4 EtherType；这段 14-byte rewrite 与完整 adjacency 一致。子网的 glean adjacency 仍保留供新目的邻居解析，具体 host 的 `/32` FIB 则解析为 complete adjacency。这里观察到的是未解析（无 neighbor、仅 glean）到已解析（neighbor、host FIB、完整 rewrite）的转换；没有直接观察到持久的 incomplete adjacency 条目，故不声称采集到了它。
+
+接口计数从初次流量前的 `tap101 rx 7, tx 0`、`tap102 rx 7, tx 0` 增至 ICMP/UDP 后的 `tap101 rx 18, tx 8`、`tap102 rx 17, tx 8`。`show errors` 后值包括 `null-node blackholed packets 18`、`arp-reply ARP replies sent 3 (info)`、`ip4-glean ARP requests sent 1 (info)`；空闲期间的 IPv6 multicast/drop 与首包 ARP 也计入，因此不把全部计数解释为成功 IPv4 packet。删除 TAP/namespace 会删除本 Stage 的 VPP 地址、邻居与 namespace route；Stage 4 继续复用当前拓扑，最终清理时验证。

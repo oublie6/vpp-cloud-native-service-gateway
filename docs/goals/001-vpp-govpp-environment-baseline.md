@@ -457,7 +457,10 @@ bash -n scripts/goal001/*.sh
 - 新增集中命名、setup、inspect、cleanup 脚本。setup 前记录相关 host/VPP 状态到 `/run/vpp-goal001/topology-before.txt`；重复 setup/cleanup 已验证。清理后 namespace、TAP 消失，默认路由与管理接口 `eth0` 保持原值。真实输出见 `results/goal001/README.md`。
 
 ### Stage 3
-状态：⬜ 待实现
+状态：🟡 Codex 已实现并提交，待 ChatGPT 学习/工程验收
+
+- 在 Stage 2 拓扑上通过 CLI 配置两侧 VPP L3 地址与 namespace 网关；新增幂等配置和 ICMP/UDP 双向验证脚本，没有引入 GoVPP route programming。
+- 真实采集了 ARP 前仅有 connected/attached prefix、glean adjacency、空 neighbor，以及流量后 host `/32` FIB、neighbor、完整 adjacency 和 Ethernet rewrite。首轮 ICMP 首包因 ARP/glean 丢失，后续 ICMP 3/3 与 UDP 请求/确认成功。计数及排障见 `results/goal001/README.md`。
 
 ### Stage 4
 状态：⬜ 待实现
