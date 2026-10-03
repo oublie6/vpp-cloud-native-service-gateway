@@ -185,3 +185,42 @@ $ vppctl -s /run/vpp-goal001/cli.sock show adj
 `02febf0f391c` 是 server Linux TAP MAC，`02fe15d833b3` 是 VPP tap102 MAC，`0800` 是 IPv4 EtherType；这段 14-byte rewrite 与完整 adjacency 一致。子网的 glean adjacency 仍保留供新目的邻居解析，具体 host 的 `/32` FIB 则解析为 complete adjacency。这里观察到的是未解析（无 neighbor、仅 glean）到已解析（neighbor、host FIB、完整 rewrite）的转换；没有直接观察到持久的 incomplete adjacency 条目，故不声称采集到了它。
 
 接口计数从初次流量前的 `tap101 rx 7, tx 0`、`tap102 rx 7, tx 0` 增至 ICMP/UDP 后的 `tap101 rx 18, tx 8`、`tap102 rx 17, tx 8`。`show errors` 后值包括 `null-node blackholed packets 18`、`arp-reply ARP replies sent 3 (info)`、`ip4-glean ARP requests sent 1 (info)`；空闲期间的 IPv6 multicast/drop 与首包 ARP 也计入，因此不把全部计数解释为成功 IPv4 packet。删除 TAP/namespace 会删除本 Stage 的 VPP 地址、邻居与 namespace route；Stage 4 继续复用当前拓扑，最终清理时验证。
+
+## Stage 4：真实 graph 与 packet trace（2026-10-03 UTC）
+
+在 Stage 3 已解析的邻居状态上，`show hardware-interfaces` 确认 TAP 是 VIRTIO；`show runtime` 显示 `virtio-input` 为 polling，`show node virtio-input` 确认其 `next-index 4 -> ethernet-input`。本机没有 `tap-input` node，故 trace 使用真实 input node。`scripts/goal001/capture-trace.sh` 清空 trace/error，执行 `trace add virtio-input 4`，发送 1 个 client -> server ping，再输出 trace、errors、runtime、threads。ping 为 `1 transmitted, 1 received`。
+
+请求 packet 的真实 trace 摘要（未补造中间 node）：
+
+```text
+virtio-input       hw_if_index 2, next-index 4, vring 0, len 98, num_buffers 1
+ethernet-input     sw_if_index 2, 02:fe:01:62:9d:cf -> 02:fe:13:85:c8:4f
+ip4-input          ICMP 10.10.1.2 -> 10.10.2.2, ttl 64, length 84
+ip4-lookup         fib 0, dpo-idx 5
+ip4-rewrite        tx_sw_if_index 1, dpo-idx 5, ipv4 via 10.10.2.2 tap102
+                   rewrite 02febf0f391c02fe15d833b30800
+tap102-output      02:fe:15:d8:33:b3 -> 02:fe:bf:0f:39:1c, ttl 63
+tap102-tx          buffer 0xf5851, current data 0, length 98, ref-count 1
+                   l2-hdr-offset 0, l3-hdr-offset 14
+```
+
+同一次 `show trace` 也捕获了 echo reply：`virtio-input -> ethernet-input -> ip4-input -> ip4-lookup (dpo-idx 4) -> ip4-rewrite (via 10.10.1.2 tap101) -> tap101-output -> tap101-tx`，回包 TTL 同样由 64 降到 63。两方向与 ping 成功结果相互印证。
+
+`virtio-input` 从 Linux TAP/virtio 队列读 packet，形成供 graph 调度的 buffer；`ethernet-input` 看 L2 头并将 IPv4 packet 送到 `ip4-input`。`ip4-input` 做 IPv4 输入处理后将 frame 送到 `ip4-lookup`；后者使用 FIB 0 与 DPO index 5，选择已解析的 host adjacency。该版本 trace 未单列 `load-balance` node，但 Stage 3 的 FIB 显示 `dpo-load-balance -> ipv4 via 10.10.2.2 tap102`，这是同一步转发决策的控制状态证据。`ip4-rewrite` 应用 adjacency 的 14-byte L2 rewrite 并递减 TTL；`tap102-output` 到 `tap102-tx` 把转发路径交给 VIRTIO device output。trace 中的 `buffer 0xf5851`、offset 与 `ref-count 1` 是本次 packet buffer 状态；node 之间传的是 buffer index/frame，不需每个 node 复制完整 packet。trace 没有直接显示 frame 内所有 buffer indices，不能由这一次 packet 推断批量 vector 行为。
+
+`show runtime` 的相关累计值：
+
+| Node | Calls | Vectors | Vectors/Call |
+| --- | ---: | ---: | ---: |
+| `virtio-input` | 863273452 | 45 | 0.00（含空轮询） |
+| `ethernet-input` | 43 | 45 | 1.05 |
+| `ip4-input` | 17 | 17 | 1.00 |
+| `ip4-lookup` | 17 | 17 | 1.00 |
+| `ip4-rewrite` | 16 | 16 | 1.00 |
+| `tap102-output` / `tap102-tx` | 11 / 11 | 11 / 11 | 1.00 / 1.00 |
+
+这些是整个 VPP 实例启动后的累计值，含此前 Stage 3 流量；低流量下没有性能结论。`show threads` 只有 `ID 0 vpp_main, LWP 210136, lcore/core 7`，没有额外 worker 或跨 worker handoff；graph 的 next-node 在该 main thread 内继续处理。`clear errors` 后单包请求/回复的 `show errors` 只有表头，无新增 error 行。此前的 `null-node blackholed packets` 主要来自 TAP 自动 IPv6 流量及未启用 IPv6，不应与本次成功 IPv4 trace 混同。
+
+### 最终从干净环境复验
+
+清理旧拓扑并停止/重启独立 VPP 后，按顺序运行 `go run ./cmd/vpp-probe`、`setup-topology.sh`、`configure-forwarding.sh`、`test-forwarding.sh`、`capture-trace.sh`、`cleanup-topology.sh`。GoVPP 再次返回 `24.10-release`；首次 ICMP 3 发 2 收（ARP 首包），UDP 请求/确认成功；trace 的 1 发 1 收成功，实际 node path 与上述记录一致，`clear errors` 后只有表头。重启后 hw/sw interface index 和随机 TAP MAC 与上一次不同（请求 input index 1、output index 2，rewrite `02fe371dbf4102feb3a77bbe0800`），这说明脚本依赖接口名而非固定 index/MAC。最终 `ip netns list` 为空、VPP 仅 `local0`、ownership marker 消失；host default route 仍是 `default via 10.0.138.1 dev eth0 proto static`，`eth0` 仍为 `UP d8:88:ef:00:01:c6 10.0.138.51/24`。

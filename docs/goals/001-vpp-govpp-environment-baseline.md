@@ -463,7 +463,10 @@ bash -n scripts/goal001/*.sh
 - 真实采集了 ARP 前仅有 connected/attached prefix、glean adjacency、空 neighbor，以及流量后 host `/32` FIB、neighbor、完整 adjacency 和 Ethernet rewrite。首轮 ICMP 首包因 ARP/glean 丢失，后续 ICMP 3/3 与 UDP 请求/确认成功。计数及排障见 `results/goal001/README.md`。
 
 ### Stage 4
-状态：⬜ 待实现
+状态：🟡 Codex 已实现并提交，待 ChatGPT 学习/工程验收
+
+- 本机 TAP/VIRTIO 的真实 polling input node 为 `virtio-input`，新增可复现的 trace 脚本。真实 echo request 和 reply 都沿 `virtio-input -> ethernet-input -> ip4-input -> ip4-lookup -> ip4-rewrite -> tap*-output -> tap*-tx` 成功转发。
+- `ip4-lookup` 的 DPO index 与 Stage 3 host FIB 的 load-balance/adjacency 相互印证；`ip4-rewrite` 显示目的 MAC、源 MAC、EtherType 与 TTL 变化。`show runtime` 的 calls/vectors/vector per call、`show threads` 的单 main thread 与清空后的 error counters 均已记录在 `results/goal001/README.md`，不作性能推断。
 
 ---
 

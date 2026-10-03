@@ -426,13 +426,13 @@ DPDK High-Speed Flow Router v0.1      ✅ 已封板
 
 VPP Cloud-Native Service Gateway
 └─ Repository bootstrap              ✅
-   └─ Goal 001                       🟡 已设计，待实现
+   └─ Goal 001                       🟡 已实现，待 ChatGPT 最终验收
 ~~~
 
-下一步不是直接写 Kubernetes controller。
+下一步由 ChatGPT 验收 Goal 001；不要直接写 Kubernetes controller。
 
-**Goal 001 从 VPP/GoVPP 环境基线开始，并继续完成 graph/node/frame/worker 学习、软件接口拓扑、两接口 L3 forwarding、FIB/DPO/adjacency 与真实 packet trace。**
+**Goal 001 已实现 VPP/GoVPP 环境基线、软件接口拓扑、两接口 L3 forwarding、FIB/DPO/adjacency 观察与真实 packet trace；学习和工程结论待 ChatGPT 验收。**
 
-Goal 001 已设计：`docs/goals/001-vpp-govpp-environment-baseline.md`。
+Goal 001 文档：`docs/goals/001-vpp-govpp-environment-baseline.md`；实际运行证据：`results/goal001/README.md`。
 
 具体 Goal 由 ChatGPT 设计并验收，Codex 按 `AGENTS.md` 执行。
