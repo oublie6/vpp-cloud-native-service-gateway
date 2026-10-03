@@ -451,7 +451,10 @@ bash -n scripts/goal001/*.sh
 - 包安装曾自动启动默认服务并设置 HugePages；已停用默认服务、将当前及持久配置的 HugePages 值恢复为 0。后续使用独立实例，未配置 NIC、VFIO、路由或 firewall。
 
 ### Stage 2
-状态：⬜ 待实现
+状态：🟡 Codex 已实现并提交，待 ChatGPT 学习/工程验收
+
+- 选用 VPP 24.10 内建 TAP/virtio，两个 Linux TAP 端分别位于 `g001-client`、`g001-server` namespace；VPP 端为 `tap101`、`tap102`。本 Stage 仅建立接口和 Linux 端地址，VPP L3 配置留待 Stage 3。
+- 新增集中命名、setup、inspect、cleanup 脚本。setup 前记录相关 host/VPP 状态到 `/run/vpp-goal001/topology-before.txt`；重复 setup/cleanup 已验证。清理后 namespace、TAP 消失，默认路由与管理接口 `eth0` 保持原值。真实输出见 `results/goal001/README.md`。
 
 ### Stage 3
 状态：⬜ 待实现

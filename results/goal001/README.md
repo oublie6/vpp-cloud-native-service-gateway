@@ -94,3 +94,66 @@ $ test ! -e /run/vpp-goal001/api.sock && test ! -e /run/vpp-goal001/cli.sock && 
 ```
 
 生命周期：默认系统 `vpp.service` 已禁用；Stage 1 实例只能由 `start-vpp.sh` 启动、`stop-vpp.sh` 停止。`/run/vpp-goal001/vpp.log` 留在主机供故障排查，不提交到仓库。
+
+## Stage 2：软件 TAP 拓扑（2026-10-03 UTC）
+
+实际环境再次核对：Ubuntu 20.04、kernel `5.4.0-216-generic`、Go `1.24.13`、VPP `24.10-release`、GoVPP `v0.13.0`。`/run/vpp-goal001/cli.sock` 与 `api.sock` 由 Goal 001 独立实例创建，系统 `vpp.service` 为 inactive，DPDK plugin 禁用。实际 CLI 无 `create host-interface`，`help create tap` 提供 `host-ns` 和 `host-if-name`，故选择 VPP TAP/virtio 软件接口。
+
+```text
+g001-client [g001tapc, 10.10.1.2/24]
+          ↕ Linux TAP fd / VPP virtio (tap101, sw_if_index 1)
+        VPP
+          ↕ VPP virtio / Linux TAP fd (tap102, sw_if_index 2)
+g001-server [g001taps, 10.10.2.2/24]
+```
+
+TAP Linux 端直接在 namespace 内；宿主根 namespace 不获得实验 IP。Stage 2 暂不设置 VPP L3 地址，故 VPP sw interface 为 admin down；hardware link 显示 up。`scripts/goal001/topology-common.sh` 集中定义名称和 IP，`setup-topology.sh` 在创建前把相关 host/VPP 状态写到 `/run/vpp-goal001/topology-before.txt`，`cleanup-topology.sh` 凭 ownership marker 删除所建 TAP 和 namespace。该运行时记录不提交到 Git。
+
+创建前状态摘要（原始记录的 `ip netns list` 为空）：
+
+```text
+ip -br link: eth0 UP d8:88:ef:00:01:c6; wg0 UNKNOWN; docker0 DOWN; br-47f313e555f1 UP; 另有两条 Docker veth
+ip -br addr: eth0 10.0.138.51/24; wg0 10.253.0.2/30; docker0 172.17.0.1/16; br-47f313e555f1 172.18.0.1/16
+ip -4 route: default via 10.0.138.1 dev eth0 proto static; 其余为上述接口的 connected routes
+VPP show interface: local0 idx 0 down
+```
+
+本 Stage 没有修改 sysctl。创建后真实检查：
+
+```text
+$ scripts/goal001/setup-topology.sh
+Goal 001 TAP 拓扑已创建：g001-client/g001tapc -> VPP -> g001-server/g001taps
+$ scripts/goal001/setup-topology.sh
+Goal 001 拓扑已存在
+$ ip netns list
+g001-server
+g001-client
+$ ip -n g001-client -br addr; ip -n g001-server -br addr
+g001tapc UNKNOWN 10.10.1.2/24 ...
+g001taps UNKNOWN 10.10.2.2/24 ...
+$ vppctl -s /run/vpp-goal001/cli.sock show interface
+local0  0 down
+tap101  1 down 9000/0/0/0
+tap102  2 down 9000/0/0/0
+$ vppctl -s /run/vpp-goal001/cli.sock show hardware-interfaces
+tap101 1 up tap101; VIRTIO interface; RX queue 0 on main (polling); TX queue 0
+tap102 2 up tap102; VIRTIO interface; RX queue 0 on main (polling); TX queue 0
+```
+
+首次 cleanup 用了错误的 `delete tap id 101`，CLI 报 `unknown input`；按本机 `help delete tap` 改为 `delete tap tap101` 后成功。失败发生在删除任何对象之前，未造成 host 状态变化。清理证据：
+
+```text
+$ scripts/goal001/cleanup-topology.sh
+Goal 001 TAP/namespace 已清理；原始状态记录：/run/vpp-goal001/topology-before.txt
+$ scripts/goal001/cleanup-topology.sh
+Goal 001 拓扑不存在；未删除任何对象
+$ ip netns list
+(空)
+$ vppctl -s /run/vpp-goal001/cli.sock show interface
+local0 0 down
+$ ip -4 route show default
+default via 10.0.138.1 dev eth0 proto static
+$ ip -br link show eth0; ip -br addr show eth0
+eth0 UP d8:88:ef:00:01:c6 ...
+eth0 UP 10.0.138.51/24 ...
+```
