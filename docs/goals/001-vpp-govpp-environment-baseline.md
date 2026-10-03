@@ -441,7 +441,7 @@ bash -n scripts/goal001/*.sh
 ## 12. Codex 实现记录
 
 ### Stage 1
-状态：🟡 Codex 已实现并提交，待 ChatGPT 学习/工程验收
+状态：✅ 已实现并通过 ChatGPT 验收
 
 - 原生 Ubuntu 20.04 / kernel `5.4.0-216-generic` / amd64；主机 Go 已升级到 `1.24.13`。focal 官方 release APT 仓库最高稳定 VPP 为 `24.10-release`，与优先目标 `26.06` 有版本偏差；固定 GoVPP `v0.13.0`。
 - 新增独立 VPP startup config、环境检查和启停脚本，以及通过 `govpp.Connect` 和生成的 `vpe` RPC client 发出 `ShowVersion` 的 Go probe。socket 路径可由 `-api-socket` 或 `VPP_API_SOCKET` 指定。
@@ -451,19 +451,19 @@ bash -n scripts/goal001/*.sh
 - 包安装曾自动启动默认服务并设置 HugePages；已停用默认服务、将当前及持久配置的 HugePages 值恢复为 0。后续使用独立实例，未配置 NIC、VFIO、路由或 firewall。
 
 ### Stage 2
-状态：🟡 Codex 已实现并提交，待 ChatGPT 学习/工程验收
+状态：✅ 已实现并通过 ChatGPT 验收
 
 - 选用 VPP 24.10 内建 TAP/virtio，两个 Linux TAP 端分别位于 `g001-client`、`g001-server` namespace；VPP 端为 `tap101`、`tap102`。本 Stage 仅建立接口和 Linux 端地址，VPP L3 配置留待 Stage 3。
 - 新增集中命名、setup、inspect、cleanup 脚本。setup 前记录相关 host/VPP 状态到 `/run/vpp-goal001/topology-before.txt`；重复 setup/cleanup 已验证。清理后 namespace、TAP 消失，默认路由与管理接口 `eth0` 保持原值。真实输出见 `results/goal001/README.md`。
 
 ### Stage 3
-状态：🟡 Codex 已实现并提交，待 ChatGPT 学习/工程验收
+状态：✅ 已实现并通过 ChatGPT 验收
 
 - 在 Stage 2 拓扑上通过 CLI 配置两侧 VPP L3 地址与 namespace 网关；新增幂等配置和 ICMP/UDP 双向验证脚本，没有引入 GoVPP route programming。
 - 真实采集了 ARP 前仅有 connected/attached prefix、glean adjacency、空 neighbor，以及流量后 host `/32` FIB、neighbor、完整 adjacency 和 Ethernet rewrite。首轮 ICMP 首包因 ARP/glean 丢失，后续 ICMP 3/3 与 UDP 请求/确认成功。计数及排障见 `results/goal001/README.md`。
 
 ### Stage 4
-状态：🟡 Codex 已实现并提交，待 ChatGPT 学习/工程验收
+状态：✅ 已实现并通过 ChatGPT 验收
 
 - 本机 TAP/VIRTIO 的真实 polling input node 为 `virtio-input`，新增可复现的 trace 脚本。真实 echo request 和 reply 都沿 `virtio-input -> ethernet-input -> ip4-input -> ip4-lookup -> ip4-rewrite -> tap*-output -> tap*-tx` 成功转发。
 - `ip4-lookup` 的 DPO index 与 Stage 3 host FIB 的 load-balance/adjacency 相互印证；`ip4-rewrite` 显示目的 MAC、源 MAC、EtherType 与 TTL 变化。`show runtime` 的 calls/vectors/vector per call、`show threads` 的单 main thread 与清空后的 error counters 均已记录在 `results/goal001/README.md`，不作性能推断。
@@ -490,16 +490,55 @@ bash -n scripts/goal001/*.sh
 下一步先进行 Stage 1 学习讲解与理解确认，再进入 Stage 2。
 
 ### Stage 2
-状态：⬜ 未验收
+状态：✅ 已验收通过
+
+验收结论（2026-10-03）：
+
+- 实际采用 VPP 24.10 TAP/VIRTIO 软件 backend，在 `g001-client` / `g001-server` network namespace 与 VPP `tap101` / `tap102` 之间建立隔离拓扑；未接管管理 NIC、未修改宿主默认路由、未引入 VFIO/DPDK NIC。
+- setup 前保存实验相关 host/VPP 状态；namespace/TAP 名称和地址集中定义，并使用 ownership marker 防止误删非本 Goal 对象。
+- setup 与 cleanup 均完成重复执行验证；cleanup 后 namespace/TAP 消失，VPP 回到仅 `local0`，宿主管理接口和默认路由保持原值。
+- 非阻塞 caveat：当前 cleanup 依赖 Goal 001 VPP 实例仍在运行；若 VPP 异常先退出，需要恢复实例后再清理 VPP TAP/namespace。后续可把 host namespace cleanup 与 VPP object cleanup 解耦以提高故障恢复能力。
+
+工程验收：通过。
 
 ### Stage 3
-状态：⬜ 未验收
+状态：✅ 已验收通过
+
+验收结论（2026-10-03）：
+
+- 两侧 VPP L3 地址与 namespace gateway 配置后，真实完成 client -> VPP -> server 的 IPv4 forwarding。
+- 流量前证据显示 connected/attached prefix 通过单 bucket Load-Balance DPO 指向 `ipv4-glean`，neighbor 为空；首包触发 ARP 后，生成 resolved host /32 FIB、neighbor 与 complete adjacency。
+- `10.10.2.2/32` 的 forwarding state 显示 Load-Balance DPO 最终指向 `ipv4 via 10.10.2.2 tap102`；14-byte Ethernet rewrite 的目的 MAC、源 MAC 和 EtherType 与 Linux/VPP 两端接口信息一致。
+- 首轮 ping 首包因 neighbor resolution 丢失，后续 ICMP 3/3 成功；UDP request/reply payload 双向核对成功。
+- 对历史 IPv6 multicast / null-node error 与本次 IPv4 forwarding 进行了区分，没有把累计 counter 误当成本次成功流量证据。
+- 非阻塞 caveat：`configure-forwarding.sh` 当前通过 `show interface addr` 全局 grep 判断地址是否存在；在本 Goal 固定隔离地址下可复现且已验证，后续可改为 interface-scoped 检查以增强健壮性。
+
+工程验收：通过。
 
 ### Stage 4
-状态：⬜ 未验收
+状态：✅ 已验收通过
+
+验收结论（2026-10-03）：
+
+- 根据 VPP 24.10 实际 TAP/VIRTIO backend 找到真实 polling input node `virtio-input`，未硬编码假想的 `tap-input`。
+- request 与 reply 均捕获到完整成功 trace：`virtio-input -> ethernet-input -> ip4-input -> ip4-lookup -> ip4-rewrite -> tap*-output -> tap*-tx`。
+- trace 中的 FIB id、DPO index、`tx_sw_if_index`、adjacency rewrite、TTL 64 -> 63 与 Stage 3 FIB/neighbor/adjacency state 相互印证。
+- 当前版本 trace 未单列 `ip4-load-balance` node，文档明确使用 Stage 3 FIB 的 `dpo-load-balance -> adjacency` 作为 forwarding-state 证据，没有补造不存在的 trace node。
+- `show runtime` 记录了 node 粒度 Calls/Vectors/Vectors-per-call，并正确说明低流量结果不代表性能；`show threads` 证明当前只有 main thread，没有把 graph edge 错解释成跨 CPU pipeline。
+- `clear errors` 后触发单包 trace，`show errors` 无新增 error；最终从 VPP 重启后的干净环境重新执行完整链路，接口 index/MAC 变化后仍成功，证明脚本没有依赖固定 sw_if_index/MAC。
+
+工程验收：通过。
 
 ### Goal 001 总体验收
-状态：⬜ 未验收
+状态：✅ 已验收通过
+
+总体验收结论（2026-10-03）：
+
+- Stage 1~4 均具备真实代码、真实 VPP 24.10 runtime evidence 与可重复脚本，不是仅凭 CLI 截图或文档宣称完成。
+- 已完整建立并验证 `Go -> GoVPP -> Binary API -> VPP runtime` 控制链，以及 `Linux namespace/TAP -> VPP input -> IPv4 FIB/DPO/adjacency -> L2 rewrite -> output` packet path。
+- Goal 001 的核心学习目标——software interface、hw/sw interface、FIB/Load-Balance DPO/glean/neighbor/complete adjacency、graph/node/frame/worker、trace/error/runtime observability——已有足够工程证据支撑。
+- 最终 clean-environment rerun 成功，cleanup 后 host/default-route 状态恢复；当前证据明确属于 software TAP/VIRTIO dataplane，不外推为真实 NIC/DPDK line-rate 性能。
+- 允许进入 Goal 002：GoVPP Control Plane / FIB / Stats / CNAT Service。
 
 ---
 
