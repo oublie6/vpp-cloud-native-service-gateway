@@ -436,3 +436,14 @@ VPP Cloud-Native Service Gateway
 Goal 001 文档：`docs/goals/001-vpp-govpp-environment-baseline.md`；实际运行证据：`results/goal001/README.md`。
 
 具体 Goal 由 ChatGPT 设计并验收，Codex 按 `AGENTS.md` 执行。
+
+
+---
+
+## 12. 2026-10-09 对话知识归档 / 新对话接续
+
+- **工程状态不变：Goal001 ✅ 已验收通过；Goal002 ⬜ 尚未启动。** 这轮新增的是源码教学总结和跨对话状态，非代码/运行测试。
+- [Goal001 VPP runtime、adaptive vector activity、DPO 并发/adjacency lifetime 及完整接续笔记](docs/2026-10-09-goal001-vpp-runtime-dpo-concurrency-handoff.md)。
+- [高性能学习仓库本轮知识点与掌握程度](https://github.com/oublie6/high-performance-network-learning/blob/main/notes/2026/2026-10-09-vpp-runtime-dpo-concurrency-learning-handoff.md)。
+- 已掌握（源码对照）：VLIB graph/RTC 与 worker main-loop boundary；128-loop 双桶 vector activity；DPO slot 64-bit 原子更新；refcount、barrier 和 adjacency 的生命周期；rewrite / incomplete→complete 的同步。注意 DPO stacking 是 **LB child → adjacency parent**，并非旧对话里偶尔反用的术语。
+- 接下来先补 Goal001 理论复盘的约 20%～25%：glean/ARP 首包状态、/32 complete adjacency、正反向 UDP/trace/counter，以及 cleanup 异常路径；之后再进入 Goal002 的 GoVPP/CNAT 设计（先查 24.10 API/schema）。不重做已通过的 Stage1～4。
