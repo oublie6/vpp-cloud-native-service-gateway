@@ -445,84 +445,50 @@ Goal 放在 `docs/goals/`。
 
 ---
 
-## 16. 推荐演进路线
+## 16. 当前 5-Goal 演进路线（2026-10-09 生效）
+
+> 早期九 Goal 计划已合并为五个较大 Goal。以本节和 README 为准；不允许根据历史 Goal 编号误判进度。
 
 ~~~text
-Goal 001
-VPP + GoVPP environment baseline
-+ VPP start
-+ API socket
-+ ShowVersion
-+ interface / trace basics
+Goal 001 ✅ 已完成并通过真实 VPP24.10 工程验收
+  Runtime / GoVPP / TAP graph / L3 forwarding / trace
+  （理论回讲约 75%～80%，还有少量首包/trace/cleanup 复盘）
 
-        ↓
+Goal 002 ⬜ 未启动
+  GoVPP Control Plane / FIB / Stats / CNAT Service
+  VIP/backend/session/TCP/UDP/动态增删
 
-Goal 002
-VPP graph / frame / node / worker
-+ packet trace
-+ two-interface L3 forwarding
+Goal 003 ⬜ 未启动
+  Go Service Model / Reconciler / Kubernetes Integration
 
-        ↓
+Goal 004 ⬜ 未启动
+  Two-Node Service Dataplane / Recovery / Observability
 
-Goal 003
-GoVPP FIB / interface programming
-+ dynamic route add/delete
-+ stats
-
-        ↓
-
-Goal 004
-VPP CNAT / Service baseline
-+ VIP -> backend
-+ TCP/UDP
-+ dynamic backend
-
-        ↓
-
-Goal 005
-Go Service model + reconciler
-+ idempotent VPP state management
-
-        ↓
-
-Goal 006
-Kubernetes Service / EndpointSlice watcher
-+ desired state -> VPP
-
-        ↓
-
-Goal 007
-Two-node local / remote backend
-+ scale in/out
-+ restart/reconnect
-
-        ↓
-
-Goal 008
-Observability / benchmark / troubleshooting
-
-        ↓
-
-Goal 009（可选）
-small custom VPP plugin
-+ GoVPP custom Binary API
+Goal 005 ⬜ 未启动
+  Small Custom VPP Plugin / Finalization（计划完成，并非可选）
 ~~~
 
-实际 Goal 可以合并或调整，但必须由 ChatGPT 根据前一阶段学习结果决定。
+Goal001 现成的证据、代码与验收以 `docs/goals/001-vpp-govpp-environment-baseline.md` 和 `results/goal001/README.md` 为准。Goal002 不得在 Goal001 理论回讲收尾前被自动执行，且启动前必须匹配 VPP24.10 核对 GoVPP/CNAT API/schema。
 
 ---
 
-## 17. 当前状态
+## 17. 新对话权威接续状态（2026-10-09）
 
-~~~text
-Repository bootstrap        ✅
-README / AGENTS             ✅
-Goal 001                    ⬜ 待 ChatGPT 设计
-~~~
+新对话请先按顺序阅读：
 
-当前不要自行开始 Kubernetes controller、CNAT 实现或 VPP plugin。
+1. `docs/2026-10-09-goal001-vpp-runtime-dpo-concurrency-handoff.md`；
+2. `README.md` 的当前 Goal 与五阶段路线；
+3. `docs/goals/001-vpp-govpp-environment-baseline.md` 的最终验收段落；
+4. `results/goal001/README.md`（真实 packet trace / counters / ARP / cleanup）；
+5. 高性能学习仓库 `notes/2026/2026-10-09-vpp-runtime-dpo-concurrency-learning-handoff.md`。
 
-下一步只等待 Goal 001。
+本轮已理解：worker main-loop boundary、128-loop adaptive activity 双桶、RTC、DPO child/parent（LB child stack onto adjacency parent）、64-bit dpo_copy atomic、adjacency 对象 refcount=0 后 barrier 回收、adj rewrite 内容更新的 barrier 与 back-walk。此前部分笔记曾反转 DPO parent/child 或把 ip4-load-balance 当普通 trace 必经 node；以 matching-tag 源码和实际 Goal001 trace 为准。
+
+继续顺序：**glean/ARP→resolved /32 adjacency（首包丢失）→正反向 UDP/trace/counters→cleanup 边界→Goal001 知识小结→设计 Goal002**。不要重讲已掌握的 DPO/barrier，也不要把尚未实施的 Goal002 写成已完成。
+
+### 源码 / 证据边界
+
+任何新的 VPP 机制结论仍需先读取 FD.io VPP 24.10 官方源码/文档；本次只是记录已核对的材料与学习位置，不替代重新核对。单 `vpp_main` 的 TAP software 实验不等于 multi-worker / hardware NIC 的性能或功能验证。
 
 ---
 
