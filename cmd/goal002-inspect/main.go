@@ -50,6 +50,7 @@ func inspect(apiSocket, statsSocket string) error {
 		&cnat.CnatTranslationDel{}, &cnat.CnatTranslationDelReply{},
 		&cnat.CnatTranslationDump{}, &cnat.CnatTranslationDetails{},
 		&cnat.CnatSessionDump{}, &cnat.CnatSessionDetails{},
+		&cnat.CnatSessionPurge{}, &cnat.CnatSessionPurgeReply{},
 	); err != nil {
 		return fmt.Errorf("VPP 24.10 与 GoVPP message CRC 不兼容: %w", err)
 	}

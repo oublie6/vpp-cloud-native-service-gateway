@@ -1,6 +1,6 @@
 # Goal 002：GoVPP Control Plane / FIB / Stats / CNAT Service
 
-状态：进行中；以下是实施计划和验收门槛，尚非运行结果。
+状态：Codex 已实现 Stage A～C 并完成真实 VPP 24.10 工程复验；ChatGPT 学习/工程验收待确认。验收证据见 `results/goal002/README.md`。
 
 ## 背景与机制
 
@@ -46,7 +46,8 @@
 ## Codex 实现记录
 
 - Stage A：`6c494aa`。安装同版 core plugin，核对 CNAT/interface/FIB message CRC，并在当前实例用 GoVPP Binary API 和 Stats API 真实读取。证据见 `results/goal002/README.md`。
-- Stage B：GoVPP 写入/删除实验接口地址与 FIB route；实际 ICMP 3/3、删路由后 0/2、Stats RX/TX 增长、重复调用与 cleanup 成功。提交 SHA 待 Stage B focused commit 后填写。Stage C 尚未开始。
+- Stage B：`7d5832d`。GoVPP 写入/删除实验接口地址与 FIB route；实际 ICMP 3/3、删路由后 0/2、Stats RX/TX 增长、重复调用与 cleanup 成功。
+- Stage C：GoVPP 配置 TCP/UDP 隔离 VIP、Maglev 两 backend；真实验证双向改写、正反向 session、同 flow affinity、动态删/加 backend、Service 删除、trace、Stats/runtime/error 和 cleanup。代码与证据在本次 focused commit 中。
 
 ## ChatGPT 学习 / 工程验收
 

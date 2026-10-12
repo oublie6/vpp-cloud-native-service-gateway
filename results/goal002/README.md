@@ -1,6 +1,6 @@
 # Goal 002 运行证据
 
-状态：进行中；本页覆盖 Stage A 的版本/schema 核对与 Stage B 的 GoVPP FIB/Stats 实测。CNAT VIP/多 backend/会话/动态变更尚未验证，Goal 002 未完成。Stage A 提交为 `6c494aa`。
+状态：Goal 002 Stage A～C 已实现并通过本机工程复验；ChatGPT 学习/工程验收待确认。Stage A 提交为 `6c494aa`，Stage B 提交为 `7d5832d`；Stage C 代码与证据在后续 focused commit 中。
 
 ## 2026-10-12：同步与环境
 
@@ -86,3 +86,45 @@ Goal 001 TAP/namespace 已清理；原始状态记录：/run/vpp-goal001/topolog
 Stats API 两侧 TAP 的 RX 从 2 到 10、TX 从 0 到 4，RX/TX error 均为 0；累计差值包含 ARP/自动流量，不把全部 8 个 RX 当作 3 个 ICMP packet。两轮中 TAP index 与 MAC 均可能变化，命令按接口名查询 index。
 
 cleanup 后 `ip netns list` 为空、VPP `show interface` 仅有 `local0`；宿主 `default via 10.0.138.1 dev eth0 proto static` 与 `eth0 UP 10.0.138.51/24` 未变。`git diff --check`、`go test ./...`、`go vet ./...`、`bash -n scripts/goal002/*.sh` 全部通过。
+
+## Stage C：CNAT 多 backend Service（2026-10-12）
+
+复用 Goal 001 的两个 TAP，不增加宿主接口。`g001-client=10.10.1.2/24` 经 VPP `tap101=10.10.1.1/24` 访问独立测试 VIP `198.18.0.10:18080`；两个 backend 是同一个隔离 `g001-server` namespace 内各自绑定 `10.10.2.2:18080`、`10.10.2.3:18080` 的 TCP/UDP listener，经 VPP `tap102=10.10.2.1/24` 到达。两端 Linux default route 仅在 namespace 内设置。Goal 004 再验证跨节点 backend；本节只证明两个不同 IP/backend listener 的选择与改写。
+
+`cmd/goal002-service` 通过 GoVPP `CnatTranslationUpdate`/`Del`/dump 和 session dump 配置、更新、删除 TCP/UDP translation；`scripts/goal002/service_traffic.py` 逐 flow 核对返回 payload、backend IP 与客户端看到的 VIP 源地址。`scripts/goal002/test-service.sh` 从干净拓扑自动 setup、生成流量、采集 trace/counter、删除和 cleanup；两次从干净拓扑运行成功。最后一次实测摘要：
+
+```text
+applied udp 198.18.0.10:18080 id=1 backends=2 lb=maglev
+applied tcp 198.18.0.10:18080 id=0 backends=2 lb=maglev
+udp distribution {'10.10.2.3': 14, '10.10.2.2': 6}  # 20 flow，每 flow 连续请求 2 次，同 flow backend 不变
+UDP 正反向 session 数：40；旧 .3 flow 源端口：20000
+applied udp 198.18.0.10:18080 id=1 backends=1 lb=maglev
+udp 20000 -> 10.10.2.3  # 旧 session 保持 .3
+udp distribution {'10.10.2.2': 10}  # 新 flow 只走保留的 .2
+applied udp 198.18.0.10:18080 id=1 backends=2 lb=maglev
+udp distribution {'10.10.2.2': 8, '10.10.2.3': 12}  # 新 flow 再次分到两个 backend
+tcp distribution {'10.10.2.2': 14, '10.10.2.3': 6}  # 20 条 TCP 连接
+```
+
+客户端逐条检查到 UDP/TCP 应答的 peer 都为 `('198.18.0.10', 18080)`，backend 应答 payload 中的 IP 分别是 `.2` 或 `.3`；这同时证明正向 VIP→backend 与反向 backend→VIP 改写。20 flow 的分布只是本次功能样本，不是负载均衡均匀性或性能结论。已有 UDP session 的 `.3` backend 即使从 translation path 列表删除，短时间内仍能完成请求；新源端口均走 `.2`。手工验证中该旧 session 稍后过期，新请求超时，因此不声称它无限期存活。
+
+VPP `show ip fib 198.18.0.10/32` 实际显示 `cnat refs:1`、`entry-flags:exclusive`、`cnat-client:[198.18.0.10]`，VIP 未绑到接口。`show cnat translation` 显示两个 backend 的 path 和 `lb:maglev`。GoVPP session dump 在初始 20 UDP flow 后为 40 条正反向 session；所有 TCP/UDP 流量后 `cmd/goal002-inspect` 读到 2 条 translation、148 条 session。24.10 官方源码 `cnat_api.c` 表明 `CnatSessionPurge` **同时清除所有 translation**；项目的 purge 命令先拒绝存在任何 translation 或非本实验 session，避免误删。先删除两条 translation 后，purge 了本实验 148 条 session，下一次 API dump 为 `translations=0 sessions=0`。随后新 UDP 与 TCP flow 均失败，符合 Service 删除后的预期。
+
+从清理前的真实 `show trace`，请求与回包的首条路径是：
+
+```text
+请求：virtio-input -> ethernet-input -> ip4-input -> ip4-lookup
+      -> ip4-cnat-tx (created session, 10.10.1.2:25000 -> 198.18.0.10:18080
+          => 10.10.1.2:25000 -> 10.10.2.3:18080)
+      -> ip4-load-balance -> ip4-rewrite -> tap102-output -> tap102-tx
+回包：virtio-input -> ethernet-input -> ip4-input -> ip4-lookup
+      -> ip4-cnat-tx (found session, 10.10.2.3:18080 -> 10.10.1.2:25000
+          => 198.18.0.10:18080 -> 10.10.1.2:25000)
+      -> ip4-rewrite -> tap101-output -> tap101-tx
+```
+
+这里与 Goal 001 普通 L3 trace 不同：CNAT 请求在 `ip4-cnat-tx` 创建 session 后显式进入 `ip4-load-balance`，回包则命中已有 reverse session。`show runtime` 的累计 Calls/Vectors/Vectors/Call：`ip4-cnat-tx 1263/1325/1.05`、`ip4-load-balance 654/662/1.01`、`ip4-rewrite 1282/1341/1.05`、`virtio-input 563684407/1473/0.00`（包含空轮询及此前实验，不能用于性能结论）。Stats API 的 `tap101 rx=183 tx=178`、`tap102 rx=184 tx=179`，两侧 RX/TX error 都为 0。trace 前 `clear errors` 后仍观察到 `null-node blackholed packets=4`；实验 TAP 的自动背景流量及未启用 IPv6 是可能来源，但未逐包归因，不能将这 4 次计数归为 CNAT 请求失败；成功的 TCP/UDP E2E 与双向 trace 是独立证据。
+
+测试了受限输入和失败路径：`-backends 10.0.138.51` 返回“backend 不在 Goal 002 隔离地址范围”并退出 1；错误 API socket 退出 1；仍有 translation 时全局 purge 被拒绝。脚本最终重复删除 translation 与 purge 均成功，Goal 001 namespace/TAP/ownership marker 消失，VPP 只剩 `local0`，宿主默认路由、管理接口和 HugePages（0）未变化。证据属于 Linux namespace/TAP/VPP software dataplane，无吞吐性能主张。
+
+匹配版本的一手依据：[VPP 24.10 CNAT 文档](https://docs.fd.io/vpp/24.10/developer/plugins/cnat.html)、[v24.10 `cnat_api.c`](https://github.com/FDio/vpp/blob/v24.10/src/plugins/cnat/cnat_api.c)、[v24.10 `cnat_translation.c`](https://github.com/FDio/vpp/blob/v24.10/src/plugins/cnat/cnat_translation.c)、[v24.10 `cnat_node_vip.c`](https://github.com/FDio/vpp/blob/v24.10/src/plugins/cnat/cnat_node_vip.c)、[v24.10 `cnat_src_policy.c`](https://github.com/FDio/vpp/blob/v24.10/src/plugins/cnat/cnat_src_policy.c)。实际运行行为和本机 24.10 API JSON 优先于这些材料的泛化描述。
