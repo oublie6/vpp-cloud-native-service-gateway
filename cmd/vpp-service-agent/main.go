@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -22,6 +24,7 @@ func main() {
 	kubeconfig := flag.String("kubeconfig", os.Getenv("KUBECONFIG"), "kubeconfig 文件；为空时使用 in-cluster config")
 	apiSocket := flag.String("api-socket", "/run/vpp-goal001/api.sock", "VPP Binary API socket")
 	retry := flag.Duration("retry", 5*time.Second, "reconcile 重试与全量核对间隔")
+	metricsListen := flag.String("metrics-listen", "", "可选的 loopback HTTP /metrics 与 /status 监听地址")
 	flag.Parse()
 
 	var config *rest.Config
@@ -46,6 +49,30 @@ func main() {
 		Store:      &service.Store{},
 		Logger:     log.Default(),
 		RetryEvery: *retry,
+	}
+	if *metricsListen != "" {
+		host, _, err := net.SplitHostPort(*metricsListen)
+		if err != nil || net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback() {
+			log.Fatalf("metrics-listen 必须是明确的 loopback IP:port: %q", *metricsListen)
+		}
+		listener, err := net.Listen("tcp", *metricsListen)
+		if err != nil {
+			log.Fatal(fmt.Errorf("监听 metrics: %w", err))
+		}
+		server := &http.Server{Handler: kube.MetricsHandler(controller), ReadHeaderTimeout: 3 * time.Second}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := server.Shutdown(ctx); err != nil {
+				log.Printf("关闭 metrics HTTP: %v", err)
+			}
+		}()
+		go func() {
+			if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+				log.Printf("metrics HTTP 退出: %v", err)
+			}
+		}()
+		log.Printf("metrics listening on %s", listener.Addr())
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

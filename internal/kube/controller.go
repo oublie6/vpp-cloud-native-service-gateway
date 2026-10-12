@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -28,9 +29,13 @@ type Controller struct {
 	Logger     *log.Logger
 	RetryEvery time.Duration
 
-	attempts atomic.Uint64
-	failures atomic.Uint64
-	changes  atomic.Uint64
+	attempts    atomic.Uint64
+	failures    atomic.Uint64
+	changes     atomic.Uint64
+	statusMu    sync.RWMutex
+	lastSuccess time.Time
+	lastFailure time.Time
+	lastError   string
 }
 
 type Counters struct {
@@ -41,6 +46,32 @@ type Counters struct {
 
 func (c *Controller) Counters() Counters {
 	return Counters{Attempts: c.attempts.Load(), Failures: c.failures.Load(), Changes: c.changes.Load()}
+}
+
+type Status struct {
+	Counters    Counters  `json:"counters"`
+	LastSuccess time.Time `json:"lastSuccess,omitempty"`
+	LastFailure time.Time `json:"lastFailure,omitempty"`
+	LastError   string    `json:"lastError,omitempty"`
+}
+
+func (c *Controller) Status() Status {
+	c.statusMu.RLock()
+	defer c.statusMu.RUnlock()
+	return Status{Counters: c.Counters(), LastSuccess: c.lastSuccess,
+		LastFailure: c.lastFailure, LastError: c.lastError}
+}
+
+func (c *Controller) recordResult(err error) {
+	c.statusMu.Lock()
+	defer c.statusMu.Unlock()
+	if err != nil {
+		c.lastFailure = time.Now().UTC()
+		c.lastError = err.Error()
+	} else {
+		c.lastSuccess = time.Now().UTC()
+		c.lastError = ""
+	}
 }
 
 func (c *Controller) Run(ctx context.Context) error {
@@ -96,7 +127,10 @@ func (c *Controller) Run(ctx context.Context) error {
 		c.attempts.Add(1)
 		if err := c.reconcileCache(ctx, serviceInformer.Lister(), sliceInformer.Lister()); err != nil {
 			c.failures.Add(1)
+			c.recordResult(err)
 			c.Logger.Printf("reconcile failed: %v", err)
+		} else {
+			c.recordResult(nil)
 		}
 	}
 }
