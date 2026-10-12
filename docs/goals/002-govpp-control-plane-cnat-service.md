@@ -45,7 +45,8 @@
 
 ## Codex 实现记录
 
-待填写真实提交、测试和运行证据。
+- Stage A：`6c494aa`。安装同版 core plugin，核对 CNAT/interface/FIB message CRC，并在当前实例用 GoVPP Binary API 和 Stats API 真实读取。证据见 `results/goal002/README.md`。
+- Stage B：GoVPP 写入/删除实验接口地址与 FIB route；实际 ICMP 3/3、删路由后 0/2、Stats RX/TX 增长、重复调用与 cleanup 成功。提交 SHA 待 Stage B focused commit 后填写。Stage C 尚未开始。
 
 ## ChatGPT 学习 / 工程验收
 
