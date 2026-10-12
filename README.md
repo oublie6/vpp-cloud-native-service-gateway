@@ -426,10 +426,13 @@ DPDK High-Speed Flow Router v0.1      ✅ 已封板
 
 VPP Cloud-Native Service Gateway
 └─ Repository bootstrap              ✅
-   └─ Goal 001                       ✅ 已完成并通过验收
+   ├─ Goal 001                       ✅ 已完成并通过验收
+   └─ Goal 002                       🟡 实施中：版本/schema 与 API probe 已验证
 ~~~
 
-下一步进入 Goal 002：GoVPP Control Plane / FIB / Stats / CNAT Service；仍不要跳过 Goal 002 直接写 Kubernetes controller。
+当前执行 Goal 002：GoVPP Control Plane / FIB / Stats / CNAT Service；FIB 写入与 CNAT packet E2E 尚待验证，暂不进入 Goal 003。
+
+Goal 002 计划：[Goal 文档](docs/goals/002-govpp-control-plane-cnat-service.md)；运行证据：[results/goal002](results/goal002/README.md)。
 
 **Goal 001 已通过最终验收：VPP/GoVPP 环境基线、软件接口拓扑、两接口 L3 forwarding、FIB/DPO/adjacency 与真实 packet trace 均已用 VPP 24.10 真实运行证据验证。**
 
@@ -442,7 +445,7 @@ Goal 001 文档：`docs/goals/001-vpp-govpp-environment-baseline.md`；实际运
 
 ## 12. 2026-10-09 对话知识归档 / 新对话接续
 
-- **工程状态不变：Goal001 ✅ 已验收通过；Goal002 ⬜ 尚未启动。** 这轮新增的是源码教学总结和跨对话状态，非代码/运行测试。
+- **以下为 2026-10-09 的历史接续快照**：当时 Goal001 ✅ 已验收通过、Goal002 ⬜ 尚未启动。当前工程状态以第 11 节为准。
 - [Goal001 VPP runtime、adaptive vector activity、DPO 并发/adjacency lifetime 及完整接续笔记](docs/2026-10-09-goal001-vpp-runtime-dpo-concurrency-handoff.md)。
 - [高性能学习仓库本轮知识点与掌握程度](https://github.com/oublie6/high-performance-network-learning/blob/main/notes/2026/2026-10-09-vpp-runtime-dpo-concurrency-learning-handoff.md)。
 - 已掌握（源码对照）：VLIB graph/RTC 与 worker main-loop boundary；128-loop 双桶 vector activity；DPO slot 64-bit 原子更新；refcount、barrier 和 adjacency 的生命周期；rewrite / incomplete→complete 的同步。注意 DPO stacking 是 **LB child → adjacency parent**，并非旧对话里偶尔反用的术语。

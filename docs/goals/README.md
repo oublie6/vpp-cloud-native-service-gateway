@@ -9,10 +9,10 @@ Repository bootstrap        ✅
 
 Goal 001
 VPP Runtime / GoVPP / Graph / L3 Forwarding
-状态：🟡 已设计，待 Codex 分阶段实现与 ChatGPT 学习验收
+状态：✅ 已实现并通过 ChatGPT 验收
 
 当前 Goal：
-`docs/goals/001-vpp-govpp-environment-baseline.md`
+`docs/goals/002-govpp-control-plane-cnat-service.md`（🟡 实施中）
 ~~~
 
 项目采用 5 个较大的 Goal：
@@ -52,7 +52,7 @@ VPP Runtime / GoVPP / Graph / L3 Forwarding
 规则：
 
 - Codex 只能执行当前明确指定的 Goal / Stage；
-- 未经 ChatGPT 验收，不进入下一关键 Stage；
+- 当前用户已授权连续完成 Goal 002～005；各 Goal 必须先满足对应验收条件，才能进入下一 Goal。
 - 没有真实运行证据，不得把 Stage 或 Goal 标记为完成；
 - 版本、API 和安装方式以当前官方文档及实际环境为准；
 - software TAP/AF_PACKET 结果不得表述为真实 NIC / line-rate 性能；
