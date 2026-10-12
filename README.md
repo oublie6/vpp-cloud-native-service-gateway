@@ -427,12 +427,15 @@ DPDK High-Speed Flow Router v0.1      ✅ 已封板
 VPP Cloud-Native Service Gateway
 └─ Repository bootstrap              ✅
    ├─ Goal 001                       ✅ 已完成并通过验收
-   └─ Goal 002                       🟡 Stage A～C 已实现，待 ChatGPT 最终验收
+   ├─ Goal 002                       🟡 Stage A～C 已实现，待 ChatGPT 最终验收
+   └─ Goal 003                       🟡 已实现并通过 kind/VPP 实测，待 ChatGPT 最终验收
 ~~~
 
 Goal 002 的 GoVPP FIB、Stats、CNAT TCP/UDP 双 backend 与动态更新已在 VPP 24.10 实机复验；ChatGPT 学习/工程验收待确认。
 
 Goal 002 计划：[Goal 文档](docs/goals/002-govpp-control-plane-cnat-service.md)；运行证据：[results/goal002](results/goal002/README.md)。
+
+Goal 003 的 Kubernetes Service/EndpointSlice informer、desired-state reconciler、GoVPP CNAT、TCP/UDP packet E2E 与 controller/VPP/API server 重启恢复已在隔离 kind 集群和 VPP 24.10 上验证；ChatGPT 学习/工程验收待确认。计划：[Goal 文档](docs/goals/003-kubernetes-service-reconciler.md)；运行证据：[results/goal003](results/goal003/README.md)。
 
 **Goal 001 已通过最终验收：VPP/GoVPP 环境基线、软件接口拓扑、两接口 L3 forwarding、FIB/DPO/adjacency 与真实 packet trace 均已用 VPP 24.10 真实运行证据验证。**
 

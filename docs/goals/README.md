@@ -11,8 +11,10 @@ Goal 001
 VPP Runtime / GoVPP / Graph / L3 Forwarding
 状态：✅ 已实现并通过 ChatGPT 验收
 
+Goal 002：`docs/goals/002-govpp-control-plane-cnat-service.md`（🟡 Codex 已实现，待 ChatGPT 最终验收）
+
 当前 Goal：
-`docs/goals/002-govpp-control-plane-cnat-service.md`（🟡 Codex 已实现，待 ChatGPT 最终验收）
+`docs/goals/003-kubernetes-service-reconciler.md`（🟡 Codex 已实现并通过 kind/VPP 实测，待 ChatGPT 最终验收）
 ~~~
 
 项目采用 5 个较大的 Goal：

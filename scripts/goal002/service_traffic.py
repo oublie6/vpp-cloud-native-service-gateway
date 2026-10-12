@@ -39,7 +39,7 @@ def serve():
                 print("tcp", ip, "from", peer, flush=True)
 
 
-def client(protocol, flows, base_port, repeats, expected_backend, require_both):
+def client(protocol, flows, base_port, repeats, expected_backend, require_both, vip):
     seen = {}
     for i in range(flows):
         socktype = socket.SOCK_DGRAM if protocol == "udp" else socket.SOCK_STREAM
@@ -50,15 +50,15 @@ def client(protocol, flows, base_port, repeats, expected_backend, require_both):
             for repeat in range(repeats):
                 payload = (protocol + "-flow-" + str(i) + "-repeat-" + str(repeat)).encode()
                 if protocol == "udp":
-                    sock.sendto(payload, (VIP, PORT))
+                    sock.sendto(payload, (vip, PORT))
                     data, peer = sock.recvfrom(4096)
                 else:
                     if repeat == 0:
-                        sock.connect((VIP, PORT))
+                        sock.connect((vip, PORT))
                     sock.sendall(payload)
                     data = sock.recv(4096)
                     peer = sock.getpeername()
-                if peer != (VIP, PORT):
+                if peer != (vip, PORT):
                     raise RuntimeError("逆向改写异常: peer=" + repr(peer))
                 backend, sep, echoed = data.partition(b":")
                 backend = backend.decode()
@@ -87,6 +87,7 @@ def main():
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--expect-backend", choices=BACKENDS)
     parser.add_argument("--require-both", action="store_true")
+    parser.add_argument("--vip", default=VIP)
     args = parser.parse_args()
     if args.action == "server":
         serve()
@@ -95,7 +96,7 @@ def main():
             parser.error("invalid flow count or source port range")
         if args.proto == "tcp" and args.repeats != 1:
             parser.error("TCP backend 测试只支持每连接一个请求")
-        client(args.proto, args.flows, args.base_port, args.repeats, args.expect_backend, args.require_both)
+        client(args.proto, args.flows, args.base_port, args.repeats, args.expect_backend, args.require_both, args.vip)
 
 
 if __name__ == "__main__":
