@@ -96,3 +96,11 @@ Packet 4: 10.10.4.2;18080 -> 10.10.1.2;35001
 用固定 200 ms backend 应答延迟做受控复验，两个 worker 分别处理一个 TAP，完整 `scripts/goal002/test-service.sh` 退出 0。UDP 20 flow 分布 `.3:14/.2:6`，动态缩到 `.2` 后 10 条新 flow 均到 `.2`，恢复后 20 flow 分布 `.2:8/.3:12`；TCP 20 flow 分布 `.2:14/.3:6`，客户端 reply peer 均为 VIP。真实反向 trace 显示 `10.10.2.3;18080 -> 10.10.1.2;25000` 命中 `ip4-cnat-tx found session`，改写为 `198.18.0.10;18080 -> 10.10.1.2;25000`，随后 `ip4-rewrite -> tap101-output`。Stats API 显示 tap101 rx/tx=191/181、tap102=192/183，均无 RX/TX error；`show errors` 的 1 个 `null-node blackholed packets` 来自删除 Service 后的预期负例。删除 translation 后新 TCP/UDP flow 均失败，purge 后 `CNAT translations=0 sessions=0`。原单 main thread VPP、宿主默认 route、管理 IP 和 namespace 列表已恢复。
 
 这一补充验证说明 VPP 24.10 在受控应答时延下，跨两个 worker 的 CNAT 正反向路径可运行；它也保留了首次快速应答漏改写的失败证据。实际跨物理主机测试尚未完成，不能用本节或上面的逻辑节点实验代替。
+
+## 物理双节点环境核查（2026-10-14，尚未验收）
+
+用户指出另有一台现存主机后，用 SSH 只读核查：本机 `hk-worker` 的 `wg0=10.253.0.2/30`，另一台 control-plane 的 `wg0=10.253.0.1/30`；远端 `kubectl get nodes -o wide` 有两个 Node 对象，但 `hk-worker` 为 `NotReady`，condition 是 `NodeStatusUnknown / Kubelet stopped posting node status`，最后心跳在 2026-08-30。本机当前没有 `kubelet`、`kubeadm` 或 `kubectl` 可执行文件，不能把旧 Node 对象视为运行中的 worker。
+
+双方 WireGuard peer 均配置了对端地址，但最近一次 handshake 是 2026-10-08 14:19:49 UTC；`10.253.0.1` 与 `10.253.0.2` 双向 ICMP 均失败。远端 `tcpdump` 观察到本机发出的 UDP 握手及远端回包；本机 `tcpdump` 只观察到发出的握手，没有收到回包。远端发往本机 UDP 51820 的单独探测包也没有到达本机网卡。现有证据将故障定位到本机入站路径（可能是上游安全组/NAT），**不能仅凭这些观测断言具体云平台规则**。未关闭 firewall、修改管理 NIC/default route，也未改动两台主机的 WireGuard 配置。
+
+因此，原逻辑节点实验仍成立，但尚无真实物理跨主机 Service packet E2E；Kubernetes 两节点 Ready 条件同样未满足。后续需要先恢复物理链路，并明确是否重建本机 Kubernetes worker，再执行跨主机 local/remote backend、trace、counter、failure/recovery 验收。

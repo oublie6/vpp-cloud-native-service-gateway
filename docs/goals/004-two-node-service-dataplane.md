@@ -4,7 +4,7 @@
 
 ## 背景与学习重点
 
-Goal 003 已证实 Kubernetes Service/EndpointSlice 经 informer、desired store、GoVPP 驱动 VPP CNAT，并通过 TCP/UDP packet E2E。Goal 004 验证一个本地 backend 与一个跨路由边界的远端 backend 同时存在时的正反向路径、失效收敛和可观测性。当前只有一台普通云服务器，本 Goal 的“双节点”是网络命名空间隔离的**两个逻辑节点**；不能表述成两台真实主机、真实 NIC 或 line-rate。
+Goal 003 已证实 Kubernetes Service/EndpointSlice 经 informer、desired store、GoVPP 驱动 VPP CNAT，并通过 TCP/UDP packet E2E。Goal 004 验证一个本地 backend 与一个跨路由边界的远端 backend 同时存在时的正反向路径、失效收敛和可观测性。原 Goal 004 实施时只有一台普通云服务器，因此既有“双节点”证据是网络命名空间隔离的**两个逻辑节点**；不能表述成两台真实主机、真实 NIC 或 line-rate。2026-10-14 已发现另一台物理主机，但跨主机数据路径尚未验证，详见[结果](../../results/goal004/README.md)。
 
 ## 固定环境和边界
 
@@ -55,7 +55,7 @@ VPP 对 `10.10.4.2/32` 的下一跳是 `10.10.2.2`；remote 的反向路由经 `
 
 ## Non-goals
 
-- 不引入真实第二台主机、DPDK NIC、TRex、RSS、worker handoff 或多 worker 调优。
+- 原 Goal 004 实验不引入真实第二台主机、DPDK NIC、TRex、RSS、worker handoff 或多 worker 调优。用户后续指定了现有第二台主机；其补充验证须单独记录，不能追认原逻辑节点证据为物理跨主机验收。
 - 不实现自动健康检查器；EndpointSlice readiness 是上游健康信号，Goal 004 验证其收敛效果。
 - 不实现自定义 VPP plugin；留待 Goal 005。
 
