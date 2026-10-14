@@ -79,6 +79,8 @@ controller 新增 loopback `/metrics`、`/status`，反映 attempts/failures/cha
 
 用户随后授权恢复本机环境：已安装 Ubuntu 20.04 HWE kernel 5.15、重启并复验 VPP 24.10/Goal 001 TAP dataplane，安装并固定与控制平面一致的 kubelet/kubeadm/kubectl v1.36.4；containerd 的 CRI `runc` 已改为与集群 kubelet 一致的 `systemd` cgroup driver，重启后两个既有 Docker 容器和 VPP 状态不变。`hk-worker` 尚未入群；美国节点发往本机公网 UDP 51820 的探测包未到达 `eth0`，WireGuard 仍无握手。未删除旧 Node 或现有 Pod。实际 host state、安装和失败证据见 [Goal 004 证据](../../results/goal004/README.md)。
 
+用户开放安全组后的双端同步抓包进一步显示：本机 WireGuard 握手在公网侧经 NAT 改写源端口，美国节点发出对应回复，但回复仍未到达本机 `eth0`；同方向 TCP 22 入站成功。故需排查本机公网 UDP 的 NAT 回程或上游过滤，具体规则尚未定位；在该路径恢复前，不能将 `hk-worker` 标成 Ready 或声称真实双节点 Pod E2E 已通过。
+
 ## ChatGPT 学习 / 工程验收
 
 待验收。
