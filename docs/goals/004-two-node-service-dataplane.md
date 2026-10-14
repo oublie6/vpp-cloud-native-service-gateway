@@ -83,6 +83,8 @@ controller 新增 loopback `/metrics`、`/status`，反映 attempts/failures/cha
 
 用户随后开放双方出站规则，独立 UDP echo 仍是本机请求到达美国节点、美国节点回复后本机超时；两端分别访问公共 DNS 的 UDP 查询成功。故阻塞不依赖 WireGuard 密钥，也不是两端一般 UDP 不通，而是该公网地址对的反向 UDP 路径。详见 [双端复测](../../results/goal004/README.md)。
 
+针对 VPP/DPDK 实验的疑问，已在本机 VPP 仅有 `local0`、DPDK plugin 禁用且 `eth0` 使用 Linux `virtio_net` 驱动的状态下，短暂停止 VPP 并复测 WireGuard；美国节点回包仍未到达本机网卡。VPP 已重启且 GoVPP API 检查成功。该对照排除当前 VPP 进程造成故障，公网 UDP 丢失点仍未定位。
+
 ## ChatGPT 学习 / 工程验收
 
 待验收。

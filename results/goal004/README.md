@@ -185,3 +185,7 @@ scripts/goal004/test-physical-ssh-tun.sh
 用户报告双方出站也已开放。再次触发 WireGuard 握手，美国节点 `eth0` 两次看到 `10.0.72.27:51820 -> 38.76.199.157:56702` 回复；本机对任意来源的 `10.0.138.51:51820/UDP` 抓包仍为 0，`wg0` 最近握手为 0，`ping 10.253.0.1` 为 0/3，私网 API `10.0.72.27:6443` TCP 超时。
 
 为排除 WireGuard 配置或密钥问题，在两台主机分别启动一次性 Python UDP socket：本机 `10.0.138.51:19002` 发 `goal004-udp-probe` 到美国节点 `38.55.146.97:19001`；远端 `10.0.72.27:19001` 实际收到来自 `38.76.199.157:19002` 的 payload 并向该 peer 发送 `goal004-udp-reply`，本机等待 6 秒仍超时。socket 进程退出后未留监听端口。作为对照，本机分别通过 UDP 向 `1.1.1.1:53`、`8.8.8.8:53` 查询 DNS 成功，美国节点向 `1.1.1.1:53` 查询也成功。故两端一般 UDP 外联/回包可用，故障集中于这两个公网地址之间的美国节点→本机 UDP 回程；主机抓包不足以区分美国节点云出口和本机云入口的具体过滤/NAT 规则。TCP 22 的同向连接仍可达，不能代替 UDP 证据。无须再扩大双方主机入站端口，应携带双端时间戳和五元组向相应云平台排查。
+
+### VPP/DPDK 因果排除对照（2026-10-14 18:47 UTC）
+
+本机独立 VPP 24.10 实例运行时 `show interface` 仅有 `local0`；`deploy/vpp/startup-goal001.conf` 明确禁用 `dpdk_plugin.so`。管理接口 `eth0` 为 Linux `virtio_net`/`virtio-pci` 驱动，未绑定 VFIO/UIO；`ip -d link show eth0` 未显示 XDP，`tc filter show dev eth0 ingress` 为空；默认路由仍为 `via 10.0.138.1 dev eth0`，`ip rule` 只有 Linux 默认三条规则，`iptables INPUT` 策略 ACCEPT、UFW inactive。受控运行 `scripts/goal001/stop-vpp.sh` 后再次触发 WireGuard 握手：美国节点仍看到两次 `10.0.72.27:51820 -> 38.76.199.157:56702` 回包，本机 `eth0` 对任意来源的 UDP 51820 抓包仍为 0，ping 为 0/2。随后运行 `scripts/goal001/start-vpp.sh` 恢复原实例；`show version` 为 `24.10-release`、`show interface` 仍仅 `local0`，GoVPP API/CRC 检查通过（interfaces=1、routes=5、CNAT translations/sessions=0），管理地址和默认路由不变。该 A/B 对照排除了**当前 VPP 进程**导致丢包；当前网卡驱动/配置也不支持 DPDK 接管管理网卡的解释。它不能证明历史上任何实验从未改变云平台状态，具体公网 UDP 丢失点仍待云平台定位。
