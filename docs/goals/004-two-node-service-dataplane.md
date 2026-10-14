@@ -4,7 +4,7 @@
 
 ## 背景与学习重点
 
-Goal 003 已证实 Kubernetes Service/EndpointSlice 经 informer、desired store、GoVPP 驱动 VPP CNAT，并通过 TCP/UDP packet E2E。Goal 004 验证一个本地 backend 与一个跨路由边界的远端 backend 同时存在时的正反向路径、失效收敛和可观测性。原 Goal 004 实施时只有一台普通云服务器，因此既有“双节点”证据是网络命名空间隔离的**两个逻辑节点**；不能表述成两台真实主机、真实 NIC 或 line-rate。2026-10-14 已发现另一台物理主机，但跨主机数据路径尚未验证，详见[结果](../../results/goal004/README.md)。
+Goal 003 已证实 Kubernetes Service/EndpointSlice 经 informer、desired store、GoVPP 驱动 VPP CNAT，并通过 TCP/UDP packet E2E。Goal 004 验证一个本地 backend 与一个跨路由边界的远端 backend 同时存在时的正反向路径、失效收敛和可观测性。原 Goal 004 实施时只有一台普通云服务器，因此既有“双节点”证据是网络命名空间隔离的**两个逻辑节点**；不能表述成两台真实主机、真实 NIC 或 line-rate。2026-10-14 另用临时 SSH TUN 在现有第二台物理主机上验证了补充数据路径；Kubernetes worker 仍未 Ready，详见[结果](../../results/goal004/README.md)。
 
 ## 固定环境和边界
 
@@ -72,6 +72,10 @@ VPP 对 `10.10.4.2/32` 的下一跳是 `10.10.2.2`；remote 的反向路由经 `
 ### Stage C：观测、测量和 cleanup
 
 controller 新增 loopback `/metrics`、`/status`，反映 attempts/failures/changes 与最近成功/失败时间；测试中 failures 从 0 到 3，恢复后的 success 时间晚于 failure。采用 Python 有界、限速的软件生成器验证各 100 条 TCP/UDP flow，应用 payload 128 B，目标 offered load 200 flows/s，记录 CPU/NUMA、VPP main thread、TAP Stats API 前后、runtime vectors、error counters。其结果只作为 software evidence，不做吞吐/line-rate 结论。测试脚本 cleanup 后，VPP 仅 `local0`、CNAT translation/session 0；kind 和空 Docker bridge 删除，host state 前后完整 diff 为零。远端 setup/cleanup 重复执行验证通过。
+
+### 后续补充：真实物理主机
+
+新增 `scripts/goal004/test-physical-ssh-tun.sh`，在已授权的第二台主机上用临时 SSH/TCP TUN 连接既有 VPP TAP 拓扑。真实 Kubernetes control-plane 的 Service/EndpointSlice 经本机 controller/GoVPP 驱动 CNAT；物理远端 host loopback backend 的 TCP/UDP、正反向 trace、readiness 收敛和恢复通过，脚本从干净环境复跑及自动 cleanup 退出码 0。该补充没有修复既有 WireGuard 链路，也没有使失联的 `hk-worker` Kubernetes Node Ready，故不能宣称两个 Ready Kubernetes 节点上的 Pod E2E。详细结果及失败排障见 [Goal 004 证据](../../results/goal004/README.md)。
 
 ## ChatGPT 学习 / 工程验收
 

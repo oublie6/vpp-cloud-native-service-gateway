@@ -21,4 +21,4 @@ Goal 005 自定义 API 仅控制单接口 feature 开关；正式 Service 控制
 
 ## 约束
 
-隔离 VIP 不与 kube-proxy 的普通 ClusterIP 争用。主要验证基于 VPP 24.10、TAP/Linux kernel；已有受控双 worker 功能复验，但不作 benchmark 结论。现已识别两台物理主机，尚无成功的跨主机 packet E2E 或真实 NIC 性能证据。详细运行结果见 `results/goal001`～`results/goal005`。
+隔离 VIP 不与 kube-proxy 的普通 ClusterIP 争用。主要验证基于 VPP 24.10、TAP/Linux kernel；已有受控双 worker 功能复验和经临时 SSH TUN 的真实跨主机 Service packet E2E，但不作真实 NIC benchmark 结论。现有 Kubernetes worker 仍为 `NotReady`，跨主机 backend 是远端 host loopback，不是两个 Ready 节点上的 Pod E2E。详细运行结果见 `results/goal001`～`results/goal005`。

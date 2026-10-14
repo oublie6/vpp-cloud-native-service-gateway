@@ -95,7 +95,7 @@ Packet 4: 10.10.4.2;18080 -> 10.10.1.2;35001
 
 用固定 200 ms backend 应答延迟做受控复验，两个 worker 分别处理一个 TAP，完整 `scripts/goal002/test-service.sh` 退出 0。UDP 20 flow 分布 `.3:14/.2:6`，动态缩到 `.2` 后 10 条新 flow 均到 `.2`，恢复后 20 flow 分布 `.2:8/.3:12`；TCP 20 flow 分布 `.2:14/.3:6`，客户端 reply peer 均为 VIP。真实反向 trace 显示 `10.10.2.3;18080 -> 10.10.1.2;25000` 命中 `ip4-cnat-tx found session`，改写为 `198.18.0.10;18080 -> 10.10.1.2;25000`，随后 `ip4-rewrite -> tap101-output`。Stats API 显示 tap101 rx/tx=191/181、tap102=192/183，均无 RX/TX error；`show errors` 的 1 个 `null-node blackholed packets` 来自删除 Service 后的预期负例。删除 translation 后新 TCP/UDP flow 均失败，purge 后 `CNAT translations=0 sessions=0`。原单 main thread VPP、宿主默认 route、管理 IP 和 namespace 列表已恢复。
 
-这一补充验证说明 VPP 24.10 在受控应答时延下，跨两个 worker 的 CNAT 正反向路径可运行；它也保留了首次快速应答漏改写的失败证据。实际跨物理主机测试尚未完成，不能用本节或上面的逻辑节点实验代替。
+这一补充验证说明 VPP 24.10 在受控应答时延下，跨两个 worker 的 CNAT 正反向路径可运行；它也保留了首次快速应答漏改写的失败证据。该验证本身不能代替下述跨物理主机实验。
 
 ## 物理双节点环境核查（2026-10-14，尚未验收）
 
@@ -103,4 +103,47 @@ Packet 4: 10.10.4.2;18080 -> 10.10.1.2;35001
 
 双方 WireGuard peer 均配置了对端地址，但最近一次 handshake 是 2026-10-08 14:19:49 UTC；`10.253.0.1` 与 `10.253.0.2` 双向 ICMP 均失败。远端 `tcpdump` 观察到本机发出的 UDP 握手及远端回包；本机 `tcpdump` 只观察到发出的握手，没有收到回包。远端发往本机 UDP 51820 的单独探测包也没有到达本机网卡。现有证据将故障定位到本机入站路径（可能是上游安全组/NAT），**不能仅凭这些观测断言具体云平台规则**。未关闭 firewall、修改管理 NIC/default route，也未改动两台主机的 WireGuard 配置。
 
-因此，原逻辑节点实验仍成立，但尚无真实物理跨主机 Service packet E2E；Kubernetes 两节点 Ready 条件同样未满足。后续需要先恢复物理链路，并明确是否重建本机 Kubernetes worker，再执行跨主机 local/remote backend、trace、counter、failure/recovery 验收。
+因此，在这次核查时原逻辑节点实验仍成立，但尚无真实物理跨主机 Service packet E2E；Kubernetes 两节点 Ready 条件也未满足。下节通过临时 SSH TUN 补上了物理跨主机 packet E2E；它没有修复现有 WireGuard 或 Kubernetes worker。
+
+## 独立双云主机 Service 补充实验（2026-10-14）
+
+在现有 WireGuard 回包未到达本机的情况下，用 `scripts/goal004/test-physical-ssh-tun.sh` 临时在远端 loopback 启动仅监听 `127.0.0.1:2222`、允许 point-to-point TUN 的 sshd，经外层 SSH 本地转发建立内层 `ssh -w 3:3`。该连接通过 SSH/TCP 穿越两台**独立云服务器/VM**；它是功能实验，不代表 WireGuard 已恢复、原生 UDP tunnel、真实 NIC dataplane 性能或两个 Kubernetes Ready 节点。脚本使用外部 root-only askpass 和已核对的 known_hosts，不把密码、private key 或 kubeconfig 写入仓库。Kubernetes admin kubeconfig 仅临时存于 root-only `/run`，API 经另一个本地 SSH 端口转发，cleanup 删除它。
+
+实验拓扑：
+
+```text
+g001-client 10.10.1.2 -> VPP tap101 -> CNAT 198.19.0.20:18080
+  -> VPP tap102 -> g001-server 10.10.2.2 (local backend)
+  -> g001-server tun3 10.254.0.2/30 == SSH/TCP == 远端 tun3 10.254.0.1/30
+  -> 远端 host lo 10.10.4.2/32 (remote backend)
+```
+
+VPP 的 `10.10.4.2/32` 由 GoVPP 写为 `via 10.10.2.2 tap102`，实际 FIB 显示 `API refs:1`、`oper-flags:resolved`、`dpo-load-balance -> ipv4 via 10.10.2.2 tap102` 和 14-byte Ethernet rewrite；`show ip neighbors` 中 `10.10.2.2` 是 `tap102` 的动态下一跳。Linux 仅在实验 `g001-server` namespace 设置 `ip_forward=1` 与 `10.10.4.2/32 via 10.254.0.1`，远端仅在临时 `tun3` 添加到 client `/32` 的回程 route；两台宿主默认 route 不变。client 到远端 `10.10.4.2` ping 3/3 成功，TTL=62。远端 `tcpdump -i tun3` 捕获 `10.10.1.2:41000 -> 10.10.4.2:18080` UDP 请求和反向应答各 1 个包，证明 packet 到达另一台主机。
+
+现有 control-plane 的真实 Kubernetes API 中创建隔离 `vpp-goal004-physical` Namespace、带 `198.19.0.20` test VIP 注解的 Service 和手工 EndpointSlice；本地、远端地址分别为 `.2.2`、`.4.2`。本机 controller 经 informer/desired-state/GoVPP 写入 TCP/UDP 两条 CNAT translation，VPP actual state 与 EndpointSlice 一致。**本地 backend 是实验 namespace，远端 backend 是另一台主机的 host loopback，均非 Kubernetes Pod；`hk-worker` Node 仍为 `NotReady`。**因此这项补充只证明真实主机间的 Service 数据路径和 Kubernetes 状态驱动，不能宣称 Kubernetes 两个 Ready worker 的 Pod dataplane 验收。
+
+从干净环境完整运行脚本退出码 0；最终复跑的 TCP/UDP payload 为 64 B、每协议 20 条新 flow，客户端逐条验证 backend identity 与 reply peer=VIP：
+
+```text
+udp distribution={'10.10.4.2': 9, '10.10.2.2': 11}
+tcp distribution={'10.10.4.2': 12, '10.10.2.2': 8}
+Stats API: tap101 rx=141 tx=130 rx_errors=0 tx_errors=0
+Stats API: tap102 rx=140 tx=132 rx_errors=0 tx_errors=0
+CNAT translations=2 sessions=72
+```
+
+真实 trace 中远端 UDP 正向为 `virtio-input -> ethernet-input -> ip4-input -> ip4-lookup -> ip4-cnat-tx -> ip4-load-balance -> ip4-rewrite -> tap102-output -> tap102-tx`，session 把 `10.10.1.2:41000 -> VIP:18080` 改为 `10.10.1.2:41000 -> 10.10.4.2:18080`；反向 `ip4-cnat-tx` 的 `found session` 把 `10.10.4.2:18080 -> 10.10.1.2:41000` 改为 `VIP:18080 -> 10.10.1.2:41000`，然后 `ip4-rewrite -> tap101-output`。`show runtime`：`ip4-cnat-tx Calls/Vectors/Vectors per Call=1034/1183/1.14`、`ip4-rewrite=1170/1322/1.13`、`virtio-input=2630979230/1439/0.00`（大量空轮询）；`show threads` 只有 `vpp_main`，清空后的 `show errors` 只有表头。没有据此做性能结论。
+
+实验将本地 `tun3` 置 down 后，已建立的远端 UDP flow 超时；EndpointSlice 远端 `ready=false` 后 10 条新 flow 全部转本地。恢复接口及回程 route、将 `ready=true` 后，20 条新 flow 本地/远端各 10 条；controller `/status` 显示 `Attempts=27, Failures=0, Changes=6`。手工测试中还重启过 controller，恢复后首次 `reconciled generation=1 services=2 changed=0`，VPP translation 未重复改写。链路 down 的丢包发生在 Linux/SSH TUN 一侧，清空后的 VPP error counter 未增长，不能把 timeout 冒充为 VPP drop counter。
+
+首次将手工过程编成脚本时，在写入 GoVPP 远端 route 前就发出跨主机 ping，3/3 丢失；按实际依赖调整顺序后，从干净状态复跑退出码 0。脚本退出时删除 Kubernetes Namespace、controller、两个 backend server、CNAT session、API route、TAP/namespace、两端 `tun3`、远端实验 `/32` 地址/route、临时 sshd 与端口转发。最后 `Goal 004 physical cleanup status=0`；VPP `interfaces=1 IPv4 routes=5 CNAT translations=0 sessions=0`，本机 `ip netns list` 为空，远端无实验 `tun3`、地址、route 或 Namespace，两台主机默认 route 与管理地址均与采集前相同。现有 `wg0` 仍未恢复。
+
+复现入口（参数值由执行环境提供，密码不写入命令参数或仓库）：
+
+```bash
+GOAL004_REMOTE_HOST=<authorized-host> \
+GOAL004_SSH_ASKPASS=<root-only-askpass-program> \
+GOAL004_KNOWN_HOSTS=<verified-known-hosts-file> \
+GOAL004_KUBECTL=<kubectl-binary> \
+scripts/goal004/test-physical-ssh-tun.sh
+```
