@@ -81,6 +81,8 @@ controller 新增 loopback `/metrics`、`/status`，反映 attempts/failures/cha
 
 用户开放安全组后的双端同步抓包进一步显示：本机 WireGuard 握手在公网侧经 NAT 改写源端口，美国节点发出对应回复，但回复仍未到达本机 `eth0`；同方向 TCP 22 入站成功。故需排查本机公网 UDP 的 NAT 回程或上游过滤，具体规则尚未定位；在该路径恢复前，不能将 `hk-worker` 标成 Ready 或声称真实双节点 Pod E2E 已通过。
 
+用户随后开放双方出站规则，独立 UDP echo 仍是本机请求到达美国节点、美国节点回复后本机超时；两端分别访问公共 DNS 的 UDP 查询成功。故阻塞不依赖 WireGuard 密钥，也不是两端一般 UDP 不通，而是该公网地址对的反向 UDP 路径。详见 [双端复测](../../results/goal004/README.md)。
+
 ## ChatGPT 学习 / 工程验收
 
 待验收。
