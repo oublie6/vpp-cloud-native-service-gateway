@@ -86,3 +86,13 @@ Packet 4: 10.10.4.2;18080 -> 10.10.1.2;35001
 `kind delete cluster --name goal004` 后，仅空 `kind` Docker bridge 留存；检查无 container 后删除该 bridge。测试前后相同命令采集 `/tmp/goal004-kind-before.txt` 与 `/tmp/goal004-kind-after.txt`，`diff -u` 退出码 0。宿主默认路由仍是 `default via 10.0.138.1 dev eth0 proto static`；原管理地址、原有 Docker 容器和 `vm.nr_hugepages=0` 未改变。
 
 最终代码门槛：`gofmt -l`、`go test ./...`、`go vet ./...`、`bash -n scripts/goal001/*.sh scripts/goal002/*.sh scripts/goal003/*.sh scripts/goal004/*.sh`、`python3 -m py_compile scripts/goal002/service_traffic.py scripts/goal004/traffic.py`、`git diff --check` 均通过。
+
+## 补充：VPP 双 worker 的 Service 功能复验（2026-10-14）
+
+`scripts/goal004/test-multiworker.sh` 临时复制 Goal 001 startup config，只追加 `cpu { workers 2 }`；测试完删除临时配置并恢复原单 main thread VPP。`show threads` 在测试期间显示 `vpp_main`、`vpp_wk_0`、`vpp_wk_1`；`show interface rx-placement` 显示 `tap101 queue 0` 在 worker 0、`tap102 queue 0` 在 worker 1。两侧 `show runtime` 都有非零 `ip4-cnat-tx` 与 `ip4-rewrite` vectors。此验证只检查功能，不是性能测试。
+
+首次直接以两个 worker 复跑 Goal 002 E2E 时，UDP 第一个应答的客户端 peer 是 `10.10.2.3:18080`，未被逆向改写成 VIP；即使把两个 TAP 都放在同一个 worker，未延迟的首次应答仍重现。脚本失败后清理了 translation、session、TAP 和 namespace，并恢复原 VPP。VPP 24.10 CNAT 源码中反向 client FIB 学习通过 `vl_api_rpc_call_main_thread` 发往 main thread；**首次应答过快与异步学习竞争是根据源码和现象作出的推断，尚未证明为唯一原因**。因此不能声称零延迟首次 UDP 应答在双 worker 下通过。
+
+用固定 200 ms backend 应答延迟做受控复验，两个 worker 分别处理一个 TAP，完整 `scripts/goal002/test-service.sh` 退出 0。UDP 20 flow 分布 `.3:14/.2:6`，动态缩到 `.2` 后 10 条新 flow 均到 `.2`，恢复后 20 flow 分布 `.2:8/.3:12`；TCP 20 flow 分布 `.2:14/.3:6`，客户端 reply peer 均为 VIP。真实反向 trace 显示 `10.10.2.3;18080 -> 10.10.1.2;25000` 命中 `ip4-cnat-tx found session`，改写为 `198.18.0.10;18080 -> 10.10.1.2;25000`，随后 `ip4-rewrite -> tap101-output`。Stats API 显示 tap101 rx/tx=191/181、tap102=192/183，均无 RX/TX error；`show errors` 的 1 个 `null-node blackholed packets` 来自删除 Service 后的预期负例。删除 translation 后新 TCP/UDP flow 均失败，purge 后 `CNAT translations=0 sessions=0`。原单 main thread VPP、宿主默认 route、管理 IP 和 namespace 列表已恢复。
+
+这一补充验证说明 VPP 24.10 在受控应答时延下，跨两个 worker 的 CNAT 正反向路径可运行；它也保留了首次快速应答漏改写的失败证据。实际跨物理主机测试尚未完成，不能用本节或上面的逻辑节点实验代替。

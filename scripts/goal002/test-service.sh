@@ -49,12 +49,26 @@ trap cleanup EXIT
 
 created=true
 scripts/goal001/setup-topology.sh
+if [[ -n "${GOAL002_RX_WORKER:-}" ]]; then
+  [[ "$GOAL002_RX_WORKER" =~ ^[0-9]+$ ]] || die 'GOAL002_RX_WORKER 必须是 worker 编号'
+  server_worker=${GOAL002_SERVER_RX_WORKER:-$GOAL002_RX_WORKER}
+  [[ "$server_worker" =~ ^[0-9]+$ ]] || die 'GOAL002_SERVER_RX_WORKER 必须是 worker 编号'
+  vppctl -s "$CLI_SOCKET" set interface rx-placement tap101 queue 0 worker "$GOAL002_RX_WORKER"
+  vppctl -s "$CLI_SOCKET" set interface rx-placement tap102 queue 0 worker "$server_worker"
+  vppctl -s "$CLI_SOCKET" show interface rx-placement
+fi
 go run ./cmd/goal002-fib setup
 ip -n "$CLIENT_NS" route replace default via "$CLIENT_GW" dev "$CLIENT_HOST_IF"
 ip -n "$SERVER_NS" route replace default via "$SERVER_GW" dev "$SERVER_HOST_IF"
 ip -n "$SERVER_NS" addr add 10.10.2.3/24 dev "$SERVER_HOST_IF"
 
-ip netns exec "$SERVER_NS" python3 -u scripts/goal002/service_traffic.py server >"$server_log" 2>&1 &
+# 双 worker 下首个 UDP reply 可能在邻居解析时丢失；先验证并完成双向 ARP。
+for backend in 10.10.2.2 10.10.2.3; do
+  ip netns exec "$CLIENT_NS" ping -n -c 2 -W 2 "$backend" >/dev/null || die "预热 $backend 邻居失败"
+done
+ip netns exec "$SERVER_NS" ping -n -c 2 -W 2 "${CLIENT_ADDR%/*}" >/dev/null || die '预热 client 邻居失败'
+
+ip netns exec "$SERVER_NS" python3 -u scripts/goal002/service_traffic.py server --reply-delay "${GOAL002_SERVER_REPLY_DELAY:-0}" >"$server_log" 2>&1 &
 server_pid=$!
 for attempt in {1..50}; do
   if grep -Fq 'backend server ready' "$server_log"; then break; fi
@@ -92,6 +106,8 @@ vppctl -s "$CLI_SOCKET" show trace | awk '
   active && (/^[0-9][0-9]:/ || /created session/ || /found session/ || /session:\[/) { print }
 '
 go run ./cmd/goal002-inspect
+vppctl -s "$CLI_SOCKET" show interface rx-placement
+vppctl -s "$CLI_SOCKET" show threads
 vppctl -s "$CLI_SOCKET" show runtime | grep -E 'virtio-input|ip4-cnat-tx|ip4-load-balance|ip4-rewrite'
 vppctl -s "$CLI_SOCKET" show errors
 

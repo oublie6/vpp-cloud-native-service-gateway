@@ -4,6 +4,7 @@
 import argparse
 import selectors
 import socket
+import time
 
 BACKENDS = ("10.10.2.2", "10.10.2.3")
 CLIENT = "10.10.1.2"
@@ -11,7 +12,7 @@ VIP = "198.18.0.10"
 PORT = 18080
 
 
-def serve():
+def serve(reply_delay):
     selector = selectors.DefaultSelector()
     for ip in BACKENDS:
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -28,6 +29,8 @@ def serve():
             protocol, ip = key.data
             if protocol == "udp":
                 payload, peer = key.fileobj.recvfrom(4096)
+                if reply_delay:
+                    time.sleep(reply_delay)
                 key.fileobj.sendto(ip.encode() + b":" + payload, peer)
                 print("udp", ip, "from", peer, flush=True)
             else:
@@ -35,6 +38,8 @@ def serve():
                 with conn:
                     conn.settimeout(3)
                     payload = conn.recv(4096)
+                    if reply_delay:
+                        time.sleep(reply_delay)
                     conn.sendall(ip.encode() + b":" + payload)
                 print("tcp", ip, "from", peer, flush=True)
 
@@ -88,9 +93,12 @@ def main():
     parser.add_argument("--expect-backend", choices=BACKENDS)
     parser.add_argument("--require-both", action="store_true")
     parser.add_argument("--vip", default=VIP)
+    parser.add_argument("--reply-delay", type=float, default=0.0)
     args = parser.parse_args()
     if args.action == "server":
-        serve()
+        if args.reply_delay < 0:
+            parser.error("reply delay must be nonnegative")
+        serve(args.reply_delay)
     else:
         if args.flows < 1 or args.base_port + args.flows > 65535 or args.repeats < 1:
             parser.error("invalid flow count or source port range")
