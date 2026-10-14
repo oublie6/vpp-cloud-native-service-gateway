@@ -77,6 +77,8 @@ controller 新增 loopback `/metrics`、`/status`，反映 attempts/failures/cha
 
 新增 `scripts/goal004/test-physical-ssh-tun.sh`，在用户指定的美国节点上用临时 SSH/TCP TUN 连接既有 VPP TAP 拓扑。真实 Kubernetes control-plane 的 Service/EndpointSlice 经本机 controller/GoVPP 驱动 CNAT；跨云主机 host loopback backend 的 TCP/UDP、正反向 trace、readiness 收敛和恢复通过，脚本从干净环境复跑及自动 cleanup 退出码 0。用户确认本机就是集群中的 `hk-worker`；其旧 Node 状态与本机当前 OS/kernel/kubelet 状态不一致，且仍为 `NotReady`。该补充没有修复既有 WireGuard 链路或恢复 worker，故不能宣称两个 Ready Kubernetes 节点上的 Pod E2E。详细结果及恢复前提见 [Goal 004 证据](../../results/goal004/README.md)。
 
+用户随后授权恢复本机环境：已安装 Ubuntu 20.04 HWE kernel 5.15、重启并复验 VPP 24.10/Goal 001 TAP dataplane，安装并固定与控制平面一致的 kubelet/kubeadm/kubectl v1.36.4。`hk-worker` 尚未入群；美国节点发往本机公网 UDP 51820 的探测包未到达 `eth0`，WireGuard 仍无握手。未删除旧 Node 或现有 Pod。实际 host state、安装和失败证据见 [Goal 004 证据](../../results/goal004/README.md)。
+
 ## ChatGPT 学习 / 工程验收
 
 待验收。
