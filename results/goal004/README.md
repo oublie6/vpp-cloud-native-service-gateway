@@ -99,7 +99,7 @@ Packet 4: 10.10.4.2;18080 -> 10.10.1.2;35001
 
 ## 物理双节点环境核查（2026-10-14，尚未验收）
 
-用户指出另有一台现存主机后，用 SSH 只读核查：本机 `hk-worker` 的 `wg0=10.253.0.2/30`，另一台 control-plane 的 `wg0=10.253.0.1/30`；远端 `kubectl get nodes -o wide` 有两个 Node 对象，但 `hk-worker` 为 `NotReady`，condition 是 `NodeStatusUnknown / Kubelet stopped posting node status`，最后心跳在 2026-08-30。本机当前没有 `kubelet`、`kubeadm` 或 `kubectl` 可执行文件，不能把旧 Node 对象视为运行中的 worker。
+用户确认现有两台主机分别是本机 `hk-worker` 和 `38.55.146.97` 上的 control-plane。本机 hostname 确为 `hk-worker`，`wg0=10.253.0.2/30`；美国节点的 `wg0=10.253.0.1/30`。远端 `kubectl get nodes -o wide` 有这两个 Node 对象，但 `hk-worker` 为 `NotReady`，condition 是 `NodeStatusUnknown / Kubelet stopped posting node status`。最近一次 Node heartbeat 为 2026-08-30 09:20:22 UTC，Lease renew 为 09:20:46 UTC。Node 对象与本机指向同一节点身份；对象存在不代表本机 kubelet 当前仍在运行。
 
 双方 WireGuard peer 均配置了对端地址，但最近一次 handshake 是 2026-10-08 14:19:49 UTC；`10.253.0.1` 与 `10.253.0.2` 双向 ICMP 均失败。远端 `tcpdump` 观察到本机发出的 UDP 握手及远端回包；本机 `tcpdump` 只观察到发出的握手，没有收到回包。远端发往本机 UDP 51820 的单独探测包也没有到达本机网卡。现有证据将故障定位到本机入站路径（可能是上游安全组/NAT），**不能仅凭这些观测断言具体云平台规则**。未关闭 firewall、修改管理 NIC/default route，也未改动两台主机的 WireGuard 配置。
 
@@ -150,4 +150,6 @@ scripts/goal004/test-physical-ssh-tun.sh
 
 ### Kubernetes worker 恢复的剩余条件
 
-远端 control-plane 当前的 Cilium DaemonSet image 为 `quay.io/cilium/cilium:v1.20.1`。本机实际内核为 `5.4.0-216-generic`，并且没有 `kubelet`/`kubeadm`；旧 `hk-worker` Node 对象报告的是另一套 Ubuntu 22.04 / kernel `5.15.0-30-generic` 环境。按 [Cilium 1.20 官方系统要求](https://docs.cilium.io/en/stable/operations/system_requirements/)，容器部署要求 Linux kernel 至少 5.10（或明确列出的等价内核）。因此仅恢复 SSH/WireGuard 或安装 kubelet，不能据此认定当前本机满足该集群的 Cilium worker 前提；要做两个 Ready Kubernetes 节点上的 Pod E2E，还需使用兼容主机，或单独批准内核升级、重启和重新验收 VPP 基线。此处没有执行上述主机升级或删除旧 Node。
+远端 control-plane 当前的 Cilium DaemonSet image 为 `quay.io/cilium/cilium:v1.20.1`。本机 hostname 与 Node 名均为 `hk-worker`，但当前系统为 Ubuntu 20.04、kernel `5.4.0-216-generic`，没有 `kubelet`/`kubeadm` 包、服务或 `/var/lib/kubelet`；Node 对象保留的最后上报状态是 Ubuntu 22.04、kernel `5.15.0-30-generic`、kubelet v1.36.4。现有证据不能确定系统变化的原因，不能将旧状态当成本机当前环境。当前仅安装 5.4 系列内核；APT 索引中的 `linux-generic-hwe-20.04` 候选为 5.15 系列，本机 `containerd` 1.7.24 正在运行。
+
+按 [Cilium 1.20 官方系统要求](https://docs.cilium.io/en/stable/operations/system_requirements/)，容器部署要求 Linux kernel 至少 5.10（或明确列出的等价内核）。`apt-get -s install linux-generic-hwe-20.04` 仅模拟，报告 25 个新包、0 个升级、0 个删除，包含 5.15.0-139 内核；没有执行安装。要恢复这台已确认身份的 worker，需先解决兼容内核与重启、恢复到 control-plane 的稳定连接，再安装与集群 v1.36.4 匹配的 kubelet/kubeadm 并核查重新入群后的 Cilium/Pod 状态。升级内核和重启会影响当前已验证的 VPP 主机基线，因此尚未执行；也未删除旧 Node。现有 SSH/TCP 实验通道只证明两台云主机的数据路径，未修复 WireGuard 入站或 kubelet 连通性。两个 Ready Kubernetes 节点上的 Pod E2E 仍未验收。
