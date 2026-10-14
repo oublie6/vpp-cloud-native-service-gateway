@@ -147,3 +147,7 @@ GOAL004_KNOWN_HOSTS=<verified-known-hosts-file> \
 GOAL004_KUBECTL=<kubectl-binary> \
 scripts/goal004/test-physical-ssh-tun.sh
 ```
+
+### Kubernetes worker 恢复的剩余条件
+
+远端 control-plane 当前的 Cilium DaemonSet image 为 `quay.io/cilium/cilium:v1.20.1`。本机实际内核为 `5.4.0-216-generic`，并且没有 `kubelet`/`kubeadm`；旧 `hk-worker` Node 对象报告的是另一套 Ubuntu 22.04 / kernel `5.15.0-30-generic` 环境。按 [Cilium 1.20 官方系统要求](https://docs.cilium.io/en/stable/operations/system_requirements/)，容器部署要求 Linux kernel 至少 5.10（或明确列出的等价内核）。因此仅恢复 SSH/WireGuard 或安装 kubelet，不能据此认定当前本机满足该集群的 Cilium worker 前提；要做两个 Ready Kubernetes 节点上的 Pod E2E，还需使用兼容主机，或单独批准内核升级、重启和重新验收 VPP 基线。此处没有执行上述主机升级或删除旧 Node。
