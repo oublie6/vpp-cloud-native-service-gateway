@@ -23,13 +23,14 @@
 ```bash
 scripts/goal006/build-cnat-patch.sh
 GOAL006_PLUGIN_PATH=/tmp/goal006-cnat.<本次构建>/build/vpp_plugins \
+  GOAL006_REQUIRE_AUTO_RX=true \
   GOAL006_ENABLE_INPUT_FEATURE=true GOAL006_FIRST_REPLY_REGRESSION=true \
   GOAL004_REPLY_DELAY=0 scripts/goal004/test-multiworker.sh
 ```
 
 原始分离 RX 的干净构建实测 3 轮 × 100 个全新 UDP flow，逐个校验首次 peer，三轮分别 **100/100、100/100、100/100**。reverse trace 显示 `ip4-cnat-tx found session`、源改写为 VIP，session dump 的 reverse 项标为 `input`。同 worker RX 3×100 和发行版单 main 3×100 也全通过；TCP、双 backend、backend 增删、Service 删除与 API dump 均通过。隔离 VPP 重启后重新启用 feature、重连 GoVPP，再跑两次完整 3×100，重启前后均为每轮 100/100，最后恢复原单 main VPP。日志：`multiworker-clean-build-3x100.log`、`multiworker-same-rx-3x100.log`、`single-main-stock-3x100.log`、`multiworker-restart-regression-2.log`。
 
-排障过程：首次重启回归在重复设置已正确的 TAP RX placement 时触发 VPP worker barrier abort；core 栈位于 `set_hw_interface_rx_placement`，而非 CNAT。脚本现先查询 placement，只在不同值时更改，并在异常退出时清理 Goal001 owned namespace。抓取 TAP pcap 的原版复现实验因采集开销没有重现错误，该 pcap **只证明成功流量**，不能充作失败包证据。失败证据以上述无 pcap 的 trace 和客户端 peer 为准。
+排障过程：首次重启回归在重复设置已正确的 TAP RX placement 时触发 VPP worker barrier abort；core 栈位于 `set_hw_interface_rx_placement`，而非 CNAT。后续精确 patch 重新构建时又遇到同样的隔离 VPP abort。查明 `show interface rx-placement` 的线程行以 `\r` 结尾，脚本的 `awk` 没有去除它，误判已经自动分离的 `tap101 → vpp_wk_0`、`tap102 → vpp_wk_1` 为不匹配，于是多余地调用 RX placement CLI。修正解析，并在 `GOAL006_REQUIRE_AUTO_RX=true` 时只核对自动分配、绝不动态迁移。最终源码重新构建的候选插件在该模式下，VPP 重启前后各 3×100 首次 UDP peer 均为 VIP，TCP/双 backend/Service 删除再次通过；日志 `build-repro-after-exact-patch.log`、`multiworker-auto-rx-final.log`。异常测试后原 VPP、namespace、默认 route 与管理接口均恢复。抓取 TAP pcap 的原版复现实验因采集开销没有重现错误，该 pcap **只证明成功流量**，不能充作失败包证据。失败证据以上述无 pcap 的 trace 和客户端 peer 为准。
 
 补丁改变 reverse session 的 lookup 位置，并在接收后端报文的接口启用输入 feature；生命周期仍由 VPP 原有 CNAT session 机制管理。独立加载和关闭即可回退到发行版插件。由于未改常驻插件，此处不能声称常驻双 worker 已修好；补丁也只做了有限功能回归，不是并发正确性的形式证明。
 

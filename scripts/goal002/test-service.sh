@@ -78,16 +78,23 @@ if [[ -n "${GOAL002_RX_WORKER:-}" ]]; then
   placement_matches() {
     local iface=$1 worker=$2
     vppctl -s "$CLI_SOCKET" show interface rx-placement | awk -v iface="$iface" -v wanted="vpp_wk_$worker" '
-      /^Thread / { current=$3; gsub(/[():]/, "", current) }
+      /^Thread / { current=$3; gsub(/[():\r]/, "", current) }
       $1 == iface && $2 == "queue" { found=1; if (current == wanted) matched=1 }
       END { exit !(found && matched) }
     '
   }
-  if ! placement_matches tap101 "$GOAL002_RX_WORKER"; then
-    vppctl -s "$CLI_SOCKET" set interface rx-placement tap101 queue 0 worker "$GOAL002_RX_WORKER"
-  fi
-  if ! placement_matches tap102 "$server_worker"; then
-    vppctl -s "$CLI_SOCKET" set interface rx-placement tap102 queue 0 worker "$server_worker"
+  if [[ "${GOAL006_REQUIRE_AUTO_RX:-false}" == true ]]; then
+    # 本机 VPP 24.10 偶发在 TAP RX placement 动态迁移时触发 worker barrier abort；先检查自动分配。
+    vppctl -s "$CLI_SOCKET" show interface rx-placement
+    placement_matches tap101 "$GOAL002_RX_WORKER" || die 'tap101 自动 RX worker 与预期不同'
+    placement_matches tap102 "$server_worker" || die 'tap102 自动 RX worker 与预期不同'
+  else
+    if ! placement_matches tap101 "$GOAL002_RX_WORKER"; then
+      vppctl -s "$CLI_SOCKET" set interface rx-placement tap101 queue 0 worker "$GOAL002_RX_WORKER"
+    fi
+    if ! placement_matches tap102 "$server_worker"; then
+      vppctl -s "$CLI_SOCKET" set interface rx-placement tap102 queue 0 worker "$server_worker"
+    fi
   fi
   vppctl -s "$CLI_SOCKET" show interface rx-placement
 fi
