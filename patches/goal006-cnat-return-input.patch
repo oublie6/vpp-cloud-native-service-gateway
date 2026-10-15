@@ -1,9 +1,5 @@
 --- a/src/plugins/cnat/cnat_node_vip.c
 +++ b/src/plugins/cnat/cnat_node_vip.c
-@@ -170,5 +170,5 @@
-       cnat_client_cnt_session (cc);
-       cnat_session_create (session, ctx);
-       if (!(ct->flags & CNAT_TR_FLAG_NO_RETURN_SESSION))
+@@ -173 +173 @@
 -	cnat_rsession_create (session, ctx, CNAT_LOCATION_FIB, rsession_flags);
 +	cnat_rsession_create (session, ctx, CNAT_LOCATION_INPUT, rsession_flags);
-       trace_flags |= CNAT_TRACE_SESSION_CREATED;
