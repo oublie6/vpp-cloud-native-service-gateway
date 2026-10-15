@@ -431,6 +431,7 @@ VPP Cloud-Native Service Gateway
    ├─ Goal 003                       🟡 已实现并通过 kind/VPP 实测，待 ChatGPT 最终验收
    ├─ Goal 004                       🟡 双逻辑节点及真实双 Ready 节点 TCP Pod 实测，待 ChatGPT 最终验收
    └─ Goal 005                       🟡 小型 VPP plugin 已实现并实测，待 ChatGPT 最终验收
+   └─ Goal 006                       ⬜ 当前新 Goal：多 worker UDP 首包、Plugin 回滚、SDK 兼容、CI
 ~~~
 
 Goal 002 的 GoVPP FIB、Stats、CNAT TCP/UDP 双 backend 与动态更新已在 VPP 24.10 实机复验；ChatGPT 学习/工程验收待确认。
@@ -441,7 +442,7 @@ Goal 003 的 Kubernetes Service/EndpointSlice informer、desired-state reconcile
 
 Goal 004 的本地/远端 backend、链路故障与 EndpointSlice scale、VPP 重启恢复、controller 指标和有界软件测量已在单机双逻辑节点拓扑验证。另以 SSH/TCP TUN 在真实第二台主机验证了 TCP/UDP Service packet、trace 和 readiness 故障恢复；2026-10-15 两个现有 Kubernetes 节点均为 `Ready`，跨节点 Pod IPv4/TCP E2E 通过。补充实验还将 VPP CNAT 的远端 backend 设置为真实美国节点 Pod IP，经隔离 VIP 完成 TCP 正反向路径、EndpointSlice readiness 下线和恢复，以及自动 cleanup。公网 WireGuard UDP 仍故障，Cilium VXLAN UDP 位于 SSH/TCP 隧道内部。以上均不是硬件性能证据。计划：[Goal 文档](docs/goals/004-two-node-service-dataplane.md)；运行证据：[results/goal004](results/goal004/README.md)。
 
-Goal 005 的 `ip4-unicast` 观测插件、自定义 Binary API/GoVPP 调用、TAP packet trace、info counter 和卸载 cleanup 已在 VPP 24.10 实测。计划：[Goal 文档](docs/goals/005-small-vpp-plugin-finalization.md)；运行证据：[results/goal005](results/goal005/README.md)。项目总览见[架构](docs/architecture.md)、[排障索引](docs/troubleshooting.md)、[软件测量边界](docs/benchmark.md)。五个 Goal 的 Codex 实现已完成；Goal 002～005 的 ChatGPT 学习 / 工程验收仍待确认。
+Goal 005 的 `ip4-unicast` 观测插件、自定义 Binary API/GoVPP 调用、TAP packet trace、info counter 和卸载 cleanup 已在 VPP 24.10 实测。计划：[Goal 文档](docs/goals/005-small-vpp-plugin-finalization.md)；运行证据：[results/goal005](results/goal005/README.md)。项目总览见[架构](docs/architecture.md)、[排障索引](docs/troubleshooting.md)、[软件测量边界](docs/benchmark.md)。原五个 Goal 的主要实现已完成；2026-10-15 ChatGPT 基于代码和已记录测试证据完成审查：002/003/005 的主要功能通过，004 因双 worker 无延迟 UDP 首包漏逆向改写而附条件通过。正式独立服务器复跑尚未执行。为消除遗留问题，正式设立 [Goal 006](docs/goals/006-cnat-multiworker-hardening-and-release.md)，状态为待 Codex 实现/验收。
 
 **Goal 001 已通过最终验收：VPP/GoVPP 环境基线、软件接口拓扑、两接口 L3 forwarding、FIB/DPO/adjacency 与真实 packet trace 均已用 VPP 24.10 真实运行证据验证。**
 
@@ -449,6 +450,10 @@ Goal 001 文档：`docs/goals/001-vpp-govpp-environment-baseline.md`；实际运
 
 具体 Goal 由 ChatGPT 设计并验收，Codex 按 `AGENTS.md` 执行。
 
+
+## Goal006：遗留稳定性问题收尾（2026-10-15）
+
+[正式 Goal006](docs/goals/006-cnat-multiworker-hardening-and-release.md)：P0 多 worker 零人为延迟首个 UDP 回包正反向改写缺陷的复现、根因和修复；P1 插件安装/启动异常回滚；P2 client-go v0.33.1 与真实 Kubernetes v1.36.4 的兼容性、按官方 tag 评估升级；P2 CI 静态检查与 Goal001～005 全量受影响回归。**禁止以 200ms backend delay 冒充修复**。保留 VPP 24.10 和现有双节点 TCP tunnel/管理网络，待真实复验证据到位后由 ChatGPT 最终验收。
 
 ---
 

@@ -2,22 +2,20 @@
 
 本目录保存项目各阶段 Goal、Codex 实现记录和 ChatGPT 验收结论。
 
-当前状态：
+当前状态（2026-10-15，以最新仓库为准）：
 
 ~~~text
 Repository bootstrap        ✅
-
-Goal 001
-VPP Runtime / GoVPP / Graph / L3 Forwarding
-状态：✅ 已实现并通过 ChatGPT 验收
-
-Goal 002：`docs/goals/002-govpp-control-plane-cnat-service.md`（🟡 Codex 已实现，待 ChatGPT 最终验收）
-
-Goal 003：`docs/goals/003-kubernetes-service-reconciler.md`（🟡 Codex 已实现并通过 kind/VPP 实测，待 ChatGPT 最终验收）
-
-当前 Goal：
-`docs/goals/004-two-node-service-dataplane.md`（🟡 Codex 已实现单机双逻辑节点软件实验，待 ChatGPT 最终验收）
+Goal 001  ✅ 已通过最终验收
+Goal 002  ✅ 已实现并有真实 VPP 证据；ChatGPT 代码/证据审查通过
+Goal 003  ✅ 已实现并有 kind/VPP 证据；ChatGPT 代码/证据审查通过
+Goal 004  🟡 已实现并有真实远端 Pod TCP E2E；多 worker UDP 首包缺陷仍未解决，附条件通过
+Goal 005  ✅ 功能审查通过；异常安装回滚待加固
+Goal 006  ⬜ 当前正式 Goal：CNAT 首包 / Plugin 回滚 / SDK 兼容 / CI 收尾
 ~~~
+
+当前 Goal 文档：[006-cnat-multiworker-hardening-and-release.md](006-cnat-multiworker-hardening-and-release.md)。
+说明：Goal002～005 的“代码与已记录证据审查”不等于本轮新做了服务器独立复跑；各旧 Goal 正式文档仍可能有历史的“待验收”文本，最终收尾应由 Codex 准确更新审查状态和证据边界。Goal006 未启动实现，更未通过验收。
 
 项目采用 5 个较大的 Goal：
 
@@ -29,7 +27,7 @@ Goal 003：`docs/goals/003-kubernetes-service-reconciler.md`（🟡 Codex 已实
 005  custom VPP plugin + custom Binary API + project finalization
 ~~~
 
-五个 Goal 全部计划完成。
+原五个功能 Goal 均已有实现；现在追加 Goal006 专门消除遗留稳定性缺陷和完成工程收尾，不把它当作新的产品功能。
 
 与原先较碎的 Goal 划分相比，现在强调：
 
@@ -56,7 +54,7 @@ Goal 003：`docs/goals/003-kubernetes-service-reconciler.md`（🟡 Codex 已实
 规则：
 
 - Codex 只能执行当前明确指定的 Goal / Stage；
-- 当前用户已授权连续完成 Goal 002～005；各 Goal 必须先满足对应验收条件，才能进入下一 Goal。
+- 当前用户已明确授权 Goal006，按其 Stage A→D 执行；每个 Stage 的证据不足时必须明确阻塞，不得以延迟/跳过测试伪称修复。
 - 没有真实运行证据，不得把 Stage 或 Goal 标记为完成；
 - 版本、API 和安装方式以当前官方文档及实际环境为准；
 - software TAP/AF_PACKET 结果不得表述为真实 NIC / line-rate 性能；

@@ -517,3 +517,15 @@ Goal001 现成的证据、代码与验收以 `docs/goals/001-vpp-govpp-environme
 - 学习笔记中的关键结论同样需要记录其依据，尤其是纠正既有认知时。
 
 当前 VPP 基线为 24.10 release 时，源码级机制解释默认优先核对对应的 VPP 24.10 tag/release，而不是直接引用 master 的实现行为。
+
+---
+
+## 19. 2026-10-15 当前执行授权：Goal006（覆盖上述历史进度快照）
+
+用户已授权由 ChatGPT 设立 **Goal006**。当前 Goal：[docs/goals/006-cnat-multiworker-hardening-and-release.md](docs/goals/006-cnat-multiworker-hardening-and-release.md)。以上 2026-10-09 的 Goal002 未启动、Goal001 理论学完前不得开始等文字为历史快照，**不再是当前进度和执行阻塞**；其安全、版本、源码依据与 Git 工作流规则仍然有效。
+
+原 Goal002～005 的实现和真实证据已审查：Goal002/003/005 主要功能达标，Goal004 因双 worker 首次快速 UDP 应答偶发未经 VIP 逆向改写而附条件通过。不能声称零延迟双 worker 行为已修复。
+
+Codex **仅被授权**围绕 Goal006 Stage A→D 完成遗留收尾，并可连续推进。Stage A 为最高优先级；200ms sleep、跳过首包或退回单 worker 不是修复。破坏性网络/系统变更必须服从 Goal006 的边界，保留 SSH/TCP Node 连接及 Kubernetes 现有状态，不私自升级 VPP/kubelet 或修改宿主管理网络。若需修改现有系统安装的 VPP 二进制/插件、真实集群控制平面或 live 连接，停止并取得单独授权。
+
+运行证据放到 results/goal006/README.md；所有 Stage 按真实结果记录 DONE/BLOCKED，未修复不得宣称全部完成。代码完成后由 ChatGPT 再次审查并给出最终验收。不得由 Codex 擅自创建 Goal007。
