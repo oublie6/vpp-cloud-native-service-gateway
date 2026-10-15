@@ -87,3 +87,9 @@ Go 全包测试通过。真实 v1.36.4 双 Ready 节点测试中，Controller wa
 - 独立常驻实例已经加载候选，但输入 feature 必须在 backend 报文入口启用；其他未配置的接口不能直接套用 Goal002 TAP 的成功结论。
 - 候选补丁只经过所列功能回归；真实 API server 故障、上游合入/广泛并发压力没有在本 Goal 证明。
 - ChatGPT 学习/工程最终验收：**待验收**。
+
+## ChatGPT 正式验收记录（2026-10-16）
+
+结论：**附条件通过（限定独立 VPP + IPv4 TAP 实验）**。核对了固定 VPP 24.10 的实际源码/patch、GoVPP 输入 feature、Goal005 回滚状态机、Kubernetes v0.36.4 工具链、API watch 连接恢复测试和最新 CI。GitHub Actions run [38755515370](https://github.com/oublie6/vpp-cloud-native-service-gateway/actions/runs/38755515370) 在最终提交 `d158473d` 上为 completed/success。服务器 E2E 的数值来自 Codex 归档，非 ChatGPT 当次独立复跑。
+
+限制：原始首次回包失败的竞争解释仍是源码和 trace 支持的推断；候选插件的 reverse session INPUT 路径必须匹配实际 ingress `cnat-input-ip4` 配置，不能把当前仅启用 `tap102` 的测试工具宣称为通用 Controller 功能。C 源码中的共享 IPv4/IPv6 VIP 函数受一行补丁共同影响，但没有 IPv6 回归、Session scanner/aging 长周期与广泛并发验证；不适用生产级修复或真实性能宣称。详见 [Goal006 验收段落](../../docs/goals/006-cnat-multiworker-hardening-and-release.md#11-chatgpt-学习--工程验收结论2026-10-16)。

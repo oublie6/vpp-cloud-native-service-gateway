@@ -530,4 +530,4 @@ Codex **仅被授权**围绕 Goal006 Stage A→D 完成遗留收尾，并可连�
 
 运行证据放到 results/goal006/README.md；所有 Stage 按真实结果记录 DONE/BLOCKED，未修复不得宣称全部完成。代码完成后由 ChatGPT 再次审查并给出最终验收。不得由 Codex 擅自创建 Goal007。
 
-2026-10-15 执行进度：Goal006 Stage A～D 已由 Codex 实现并本机复验。用户已单独授权 Stage A 的常驻切换：Goal001 独立 VPP 从专用目录加载固定 VPP 24.10 CNAT 候选补丁，系统发行版文件未改；双 worker 零延迟首包、rollback/reinstall 与默认 Service E2E 通过。接收 backend 回包的接口仍须启用 `cnat-input-ip4`。ChatGPT 最终验收未进行。以 `results/goal006/README.md` 的证据和限制为准。
+2026-10-15 执行进度：Goal006 Stage A～D 已由 Codex 实现并本机复验。用户已单独授权 Stage A 的常驻切换：Goal001 独立 VPP 从专用目录加载固定 VPP 24.10 CNAT 候选补丁，系统发行版文件未改；双 worker 零延迟首包、rollback/reinstall 与默认 Service E2E 通过。接收 backend 回包的接口仍须启用 `cnat-input-ip4`。ChatGPT 已于 2026-10-16 对 Goal006 完成**附条件验收**：Stage B/C/D 通过、Stage A 仅限独立 VPP IPv4 TAP + 显式启用 `cnat-input-ip4` 的候选路径。源码共享 IPv4/IPv6、其他 ingress 和 session aging/长期并发仍未普适验证；不得声称生产级或全部场景修复。具体以 `docs/goals/006-cnat-multiworker-hardening-and-release.md` 的正式验收与 `results/goal006/README.md` 为准。

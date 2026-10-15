@@ -9,13 +9,13 @@ Repository bootstrap        ✅
 Goal 001  ✅ 已通过最终验收
 Goal 002  ✅ 已实现并有真实 VPP 证据；ChatGPT 代码/证据审查通过
 Goal 003  ✅ 已实现并有 kind/VPP 证据；ChatGPT 代码/证据审查通过
-Goal 004  🟡 已实现并有真实远端 Pod TCP E2E；多 worker UDP 首包缺陷仍未解决，附条件通过
-Goal 005  ✅ 功能审查通过；异常安装回滚待加固
-Goal 006  🟡 A～D 已实现并复验；ChatGPT 待验收
+Goal 004  🟡 真实远端 Pod TCP E2E 通过；双 worker UDP 首包问题在 Goal006 IPv4 候选路径下完成定向验证
+Goal 005  ✅ 功能审查通过；Goal006 已补齐异常回滚和失败注入
+Goal 006  ✅ ChatGPT 2026-10-16 附条件通过（限隔离 IPv4 TAP、候选 CNAT 输入 feature 路径）
 ~~~
 
 当前 Goal 文档：[006-cnat-multiworker-hardening-and-release.md](006-cnat-multiworker-hardening-and-release.md)。
-说明：Goal002～005 的“代码与已记录证据审查”不等于本轮新做了服务器独立复跑；各旧 Goal 正式文档仍可能有历史的“待验收”文本。Goal006 的受控常驻候选加载、实际复验和适用限制见 [results/goal006](../../results/goal006/README.md)。
+说明：Goal002～006 的代码/证据审查不等于 ChatGPT 独立登录服务器重跑。Goal006 **附条件通过**的代码依据、候选补丁的 IPv4 输入 feature 前提、IPv6 和 session aging 等剩余验证边界，见 [Goal006 正式验收](006-cnat-multiworker-hardening-and-release.md#11-chatgpt-学习--工程验收结论2026-10-16)及 [运行证据](../../results/goal006/README.md)。
 
 项目采用 5 个较大的 Goal：
 

@@ -93,6 +93,22 @@
 
 完整命令、失败过程、来源边界和清理证据见 [results/goal006/README.md](../../results/goal006/README.md)。常驻切换已按用户单独授权完成；系统发行版插件文件未修改。输入 feature 仍须在接收 backend 报文的 VPP 接口启用。
 
-## 11. ChatGPT 学习 / 工程验收结论
+## 11. ChatGPT 学习 / 工程验收结论（2026-10-16）
 
-待验收。
+**结论：Goal006 在既定 IPv4 TAP / 独立 VPP 实验范围内附条件通过，允许作为实验项目的工程收尾；不认定候选 CNAT 补丁具备普适并发正确性或生产部署资格。**
+
+本次 ChatGPT 已检查截至 `d158473d775c74383e1fa8db9c63cf4ff82f321e` 的 GitHub 最新代码、Goal006 脚本、仓库记录的测试证据，以及 GitHub Actions run 38755515370。未直接登录用户的两台服务器、未重跑其根权限 E2E；因此服务器运行数字来自 Codex 已记录的日志摘要，而不是 ChatGPT 独立复测。
+
+- **Stage A：附条件通过。** 官方 VPP 24.10 匹配源码确认 FIB 模式下 reverse session 创建后的 client learn 会经 main-thread RPC 异步触发，且 `cnat-input-ip4` 属于 `ip4-unicast` 输入 feature；结合原版失败 trace 与候选零延迟分离 worker 3×100、同 worker / 单 main、重启和常驻候选 rollback/reinstall，当前 IPv4 TAP 场景的功能修复可信。具体根因尚为有证据支持的竞争推断，未证实唯一因果；补丁为针对性路径改造而非上游正式修复。
+- **Stage B：通过。** Goal005 插件 build/install/start/API enable/traffic 故障注入及正常流量路径均有两轮恢复证据。
+- **Stage C：通过。** Kubernetes 三个 SDK module 对齐 v0.36.4，隔离 Go1.26.9；真实双节点 API Service/EndpointSlice、Controller restart 与仅实验客户端 watch 连接断开/恢复测试通过。没有重启真实 API Server。
+- **Stage D：通过。** 最新 `main` 提交 `d158473d` 的 [GitHub Actions run 38755515370](https://github.com/oublie6/vpp-cloud-native-service-gateway/actions/runs/38755515370) 为 completed/success，format、go test、go vet、bash -n、Python syntax 均成功；root/VPP E2E 仍依据已归档的服务器运行记录。
+
+**封板边界与遗留风险：**
+
+1. 候选修复并非“加载 .so 即自动生效”：必须对实际后端回包的 IPv4 ingress interface 显式启用 `cnat-input-ip4`。目前 `cmd/goal006-feature` 为 Goal001 `tap102` 专用，`vpp-service-agent` 本身尚未自动管理该 feature，因此不得声称任意接口或真实远端 Pod 入口默认已覆盖。
+2. 一行补丁所在 `cnat_vip_node_fn` 同时被 IPv4/IPv6 VIP node 使用，而本次只做 IPv4 输入 feature/E2E。IPv6、其他 CNAT 模式、Session aging/scanner 生命周期与高并发压力没有针对补丁独立验证；不得推广本结论。正式上游合入/更广覆盖需要单独源码审查与实测。
+3. 当前为 Linux TAP/namespace 和经 SSH/TCP TUN 的跨主机软件数据路径验证，不是原生公网 UDP、真实 NIC line-rate、生产级 HA 或硬件性能证据。
+
+因此 Goal006 无需再创建新 Goal 扩功能；可以继续进行 Goal002～006 的逐代码学习和项目总结。若将候选补丁用于当前隔离实验以外的流量，先单独完成对应 ingress feature 配置及上述兼容性回归。
+
