@@ -530,4 +530,4 @@ Codex **仅被授权**围绕 Goal006 Stage A→D 完成遗留收尾，并可连�
 
 运行证据放到 results/goal006/README.md；所有 Stage 按真实结果记录 DONE/BLOCKED，未修复不得宣称全部完成。代码完成后由 ChatGPT 再次审查并给出最终验收。不得由 Codex 擅自创建 Goal007。
 
-2026-10-15 执行进度：Goal006 Stage B（插件失败回滚）、C（Kubernetes v0.36.4 SDK/真实 API）、D（CI 与受影响回归）已由 Codex 实现并本机验证；Stage A 的 VPP 24.10 最小 CNAT patch 仅在隔离实例完成双 worker 零延迟首包回归。常驻插件仍是发行版版本，按上述授权边界待单独决定是否切换；ChatGPT 最终验收未进行。以 `results/goal006/README.md` 的证据和限制为准。
+2026-10-15 执行进度：Goal006 Stage A～D 已由 Codex 实现并本机复验。用户已单独授权 Stage A 的常驻切换：Goal001 独立 VPP 从专用目录加载固定 VPP 24.10 CNAT 候选补丁，系统发行版文件未改；双 worker 零延迟首包、rollback/reinstall 与默认 Service E2E 通过。接收 backend 回包的接口仍须启用 `cnat-input-ip4`。ChatGPT 最终验收未进行。以 `results/goal006/README.md` 的证据和限制为准。

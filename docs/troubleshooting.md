@@ -8,6 +8,6 @@
 
 插件复验：`scripts/goal005/test-plugin.sh`。它会临时重启独立 VPP、建立/清理 Goal 001 拓扑，并复查默认 route、管理 IPv4、namespace 和插件文件；请在无其他 Goal 001 拓扑实验时运行。
 
-Goal006：发行版 CNAT 在双 worker、TAP 分离 RX、后端零人为延迟时若首个 UDP 应答源为 backend 而非 VIP，检查 `tap101/tap102` RX placement、`show trace` 的逆向路径是否经过 `ip4-cnat-tx`、`show cnat session` 与客户端 /32 FIB。隔离候选 patch 的构建/3×100 复验见 `results/goal006/README.md`；不能用后端 sleep 或单 worker 当修复。插件异常回滚可显式运行 `scripts/goal006/test-plugin-rollback.sh`，默认正常脚本不会注入失败。修改系统已安装 CNAT 插件前须取得单独授权。
+Goal006：发行版 CNAT 在双 worker、TAP 分离 RX、后端零人为延迟时若首个 UDP 应答源为 backend 而非 VIP，检查 `tap101/tap102` RX placement、`show trace` 的逆向路径是否经过 `ip4-cnat-tx`、`show cnat session` 与客户端 /32 FIB。候选 patch 的构建/3×100 复验和常驻候选加载见 `results/goal006/README.md`；不能用后端 sleep 或单 worker 当修复。检查独立 VPP `/proc/<PID>/maps` 是否加载 `/var/lib/vpp-goal006/plugins/cnat_plugin.so`，后端报文入口是否启用 `cnat-input-ip4`。受控回退命令是 `scripts/goal006/deploy-cnat.sh rollback`；系统发行版插件文件未改。Goal005 插件异常回滚可显式运行 `scripts/goal006/test-plugin-rollback.sh`。
 
 VPP 24.10 的 `show interface rx-placement` 输出在本机含 `\r`；解析线程名时必须去掉它。本次脚本曾因此误判自动分离 RX 为未设置，重复执行 `set interface rx-placement` 后隔离 VPP 在 worker barrier 处 abort。Goal006 回归可设置 `GOAL006_REQUIRE_AUTO_RX=true`，仅核对两个 TAP 自动落在不同 worker，不触发动态迁移。

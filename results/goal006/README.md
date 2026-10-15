@@ -6,7 +6,7 @@
 
 ## Stage A：CNAT 多 worker 首个 UDP 回包
 
-状态：**BLOCKED（隔离补丁和回归已通过，常驻实例部署待单独授权）**。Goal006 明确要求修改系统安装的插件前单独授权，故仓库保留 patch 和独立构建入口，当前常驻 VPP 仍加载发行版 CNAT。
+状态：**DONE（候选修复已在独立常驻 VPP 加载并回归；ChatGPT 待验收）**。用户单独授权了常驻切换。系统发行版 CNAT 文件保持原样；Goal001 独立 VPP 通过专用插件搜索路径加载经过隔离验证的候选文件。
 
 ### 原始失败与机制依据
 
@@ -32,7 +32,24 @@ GOAL006_PLUGIN_PATH=/tmp/goal006-cnat.<本次构建>/build/vpp_plugins \
 
 排障过程：首次重启回归在重复设置已正确的 TAP RX placement 时触发 VPP worker barrier abort；core 栈位于 `set_hw_interface_rx_placement`，而非 CNAT。后续精确 patch 重新构建时又遇到同样的隔离 VPP abort。查明 `show interface rx-placement` 的线程行以 `\r` 结尾，脚本的 `awk` 没有去除它，误判已经自动分离的 `tap101 → vpp_wk_0`、`tap102 → vpp_wk_1` 为不匹配，于是多余地调用 RX placement CLI。修正解析，并在 `GOAL006_REQUIRE_AUTO_RX=true` 时只核对自动分配、绝不动态迁移。最终源码重新构建的候选插件在该模式下，VPP 重启前后各 3×100 首次 UDP peer 均为 VIP，TCP/双 backend/Service 删除再次通过；日志 `build-repro-after-exact-patch.log`、`multiworker-auto-rx-final.log`。异常测试后原 VPP、namespace、默认 route 与管理接口均恢复。抓取 TAP pcap 的原版复现实验因采集开销没有重现错误，该 pcap **只证明成功流量**，不能充作失败包证据。失败证据以上述无 pcap 的 trace 和客户端 peer 为准。
 
-补丁改变 reverse session 的 lookup 位置，并在接收后端报文的接口启用输入 feature；生命周期仍由 VPP 原有 CNAT session 机制管理。独立加载和关闭即可回退到发行版插件。由于未改常驻插件，此处不能声称常驻双 worker 已修好；补丁也只做了有限功能回归，不是并发正确性的形式证明。
+补丁改变 reverse session 的 lookup 位置，并在接收后端报文的接口启用输入 feature；生命周期仍由 VPP 原有 CNAT session 机制管理。候选插件已用于 Goal001 独立常驻实例，系统发行版文件未覆盖；本节只证明所列功能回归，不是并发正确性的形式证明。
+
+### 用户授权后的常驻部署、回退与重新部署
+
+部署入口 `scripts/goal006/deploy-cnat.sh install <candidate.so>` 要求 root、原版/候选文件 hash 匹配、独立 VPP 只有 `local0`、无现存 namespace/TAP/CNAT session 或其他 CLI/API 客户端，并在停机前记录默认 route、管理接口、节点连接服务及 VPP 状态。`scripts/goal001/render-startup-config.sh` 根据 `/var/lib/vpp-goal006/active.sha256` 将专用 `/var/lib/vpp-goal006/plugins` 加入独立实例配置；校验失败时拒绝启动。原版插件 root-only 备份放在 `/var/lib/vpp-goal006/original-cnat_plugin.so`，不修改 `/usr/lib/x86_64-linux-gnu/vpp_plugins/cnat_plugin.so`。rollback 命令移除 active marker 并重新启动原版实例。
+
+```bash
+scripts/goal006/deploy-cnat.sh install /tmp/goal006-cnat.<本次构建>/build/vpp_plugins/cnat_plugin.so
+scripts/goal006/deploy-cnat.sh rollback
+scripts/goal006/deploy-cnat.sh install /tmp/goal006-cnat.<本次构建>/build/vpp_plugins/cnat_plugin.so
+scripts/goal002/test-service.sh
+```
+
+本机执行先部署、rollback、再部署全部 exit 0；最终保持候选激活。每次 install 内均使用 `GOAL006_REQUIRE_AUTO_RX=true`、两个 worker 自动分离 RX、`GOAL004_REPLY_DELAY=0`，重启前后各做 3×100 新 UDP flow，六轮每轮客户端首次 peer 均为 VIP（100/100），TCP、双 backend、Service 删除及 GoVPP reconnect 通过。最终 `/proc/<VPP_PID>/maps` 指向专用目录 CNAT，active marker/候选 SHA256 均为 `d532c86af0805f0150ea9c5fa6b9cf81cec596fe13d4c941ea2e700f8816621b`；发行版文件 SHA256 仍为 `fb00daba9badf8052499f2918b1fb03757bf939cab36bb61e94e763ec5ad0ffe`。rollback 时 maps 指向发行版文件，API 基线 `interfaces=1 IPv4 routes=5 CNAT translations=0 sessions=0`，随后重新 install 再次通过。日志在本机 `/root/goal006-evidence/persistent-deploy.log`、`persistent-rollback.log`、`persistent-reinstall.log`，每次 600-flow 细节在 `/var/lib/vpp-goal006/deployment-e2e.log`。
+
+切换后再次只读核对：`ip netns list` 为空，VPP 只有 `local0`；宿主默认 route 仍为 `via 10.0.138.1 dev eth0`，管理地址仍为 `10.0.138.51/24`；`goal004-worker-tcp-link`、kubelet、containerd 均 active。此主机未配置默认 kubectl context，直接运行 `kubectl get nodes` 报 resource NotFound；通过原有 SSH/TCP 连接在美国控制面节点使用其 `/etc/kubernetes/admin.conf` 只读查询，两现有节点 `hk-worker` 和 `ser730417996259` 均为 `Ready`。未更改 kubeconfig 或集群对象。
+
+持久候选需要在接收 backend 响应的 VPP 接口启用 `cnat-input-ip4`。Goal002 Service 实验在发现 active marker 时自动通过 GoVPP 对 `tap102` 启用该 feature，cleanup 时关闭。默认 `scripts/goal002/test-service.sh` 再次 exit 0：TCP/UDP、双 backend、删除后流量失败均符合预期；测试中 VPP API 显示 2 translations、148 sessions，结束后 0 translations/0 sessions、仅 `local0`，TAP/namespace 消失。此默认调用在单 main 实例上运行；双 worker 零延迟证据来自上述每次 install 的 E2E。对其他接收 backend 响应的接口，仍需显式配置该 feature，不能将仅加载插件视为自动修复所有流量。
 
 ## Stage B：Goal005 插件异常回滚
 
@@ -67,6 +84,6 @@ Go 全包测试通过。真实 v1.36.4 双 Ready 节点测试中，Controller wa
 
 ### 仍需处理
 
-- 常驻发行版 CNAT 插件未替换，常驻实例尚不具备隔离候选补丁的零延迟双 worker 保证；安装/切换常驻插件按 Goal006 和 AGENTS.md 第 19 节需要用户单独授权。
-- 独立候选补丁只经过所列功能回归；真实 API server watch 网络中断、上游合入/广泛并发压力没有在本 Goal 证明。
+- 独立常驻实例已经加载候选，但输入 feature 必须在 backend 报文入口启用；其他未配置的接口不能直接套用 Goal002 TAP 的成功结论。
+- 候选补丁只经过所列功能回归；真实 API server 故障、上游合入/广泛并发压力没有在本 Goal 证明。
 - ChatGPT 学习/工程最终验收：**待验收**。

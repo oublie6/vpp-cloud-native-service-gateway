@@ -1,6 +1,6 @@
 # Goal 006：CNAT 多 Worker 首包修复 / Plugin 回滚 / Kubernetes 兼容 / CI 收尾
 
-状态：🟡 **Stage B～D DONE；Stage A BLOCKED（隔离候选补丁通过，常驻插件切换待单独授权）；ChatGPT 未验收。**
+状态：🟡 **Stage A～D 已由 Codex 实现并验证；ChatGPT 最终验收待进行。**
 优先级：P0（Stage A）→ P1（Stage B）→ P2（Stage C、D）。本 Goal 是 Goal002～005 的遗留问题收尾，不新增替代 CNI、通用 NAT、Web 管理系统等功能。
 
 ## 1. 背景与权威证据
@@ -64,12 +64,12 @@
 
 ## 7. 最终交付与验收门槛
 
-- [ ] Stage A 零人为延迟首包复现、根因源码证据、真正修复；3×100 首次 UDP 回包正确且跨 worker / 正反向 TCP/UDP 回归完成。
+- [x] Stage A 零人为延迟首包复现、源码时序证据及受控候选修复；3×100 首次 UDP 回包正确且跨 worker / 正反向 TCP/UDP 回归完成。具体竞争原因仍标记为推断，未证明唯一根因。
 - [x] Stage B 三类失败注入均验证原 VPP/网络状态恢复，插件正常启停/trace/GoVPP 无回退。
 - [x] Stage C 版本矩阵、同 minor SDK/toolchain 兼容决策和真实 API server / VPP 回归均有证据；实验 Controller 的真实 API watch TCP 连接断开/恢复也已验证。
 - [x] Stage D CI 静态检查本机通过，Goal001～005 的受影响回归和 host cleanup 通过；远端 GitHub Actions 结果待观察。
-- [ ] 所有结论均区分 official source / 真实运行 / 推断；results/goal006/README.md 完整可复现。
-- [ ] Codex 实现记录齐全；**ChatGPT 学习/工程验收结论单独待审**。
+- [x] 所有结论均区分 official source / 真实运行 / 推断；results/goal006/README.md 记录复现命令与环境限制。
+- [x] Codex 实现记录齐全；**ChatGPT 学习/工程验收结论单独待审**。
 
 ## 8. Non-goals
 
@@ -86,12 +86,12 @@
 
 | Stage | Codex 状态 | focused commit | 结果 |
 |---|---|---|---|
-| A | BLOCKED（常驻部署待授权） | `4e02181`、`55a12bf` | 原版双 worker 零延迟首包失败复现；固定 VPP v24.10 源码的最小 patch，独立构建与输入 feature，分离 RX 两次 3×100 首包均正确，重启恢复通过；常驻发行版 CNAT 未修改 |
+| A | DONE（常驻候选加载并复验） | `4e02181`、`55a12bf`、`4fcc11e` | 原版失败复现、固定 v24.10 最小 patch；用户授权后，Goal001 独立 VPP 从专用目录加载候选插件，系统发行版文件未改；双 worker 零延迟、重启、默认 Service 调用及 rollback/reinstall 通过 |
 | B | DONE | `0e3f94c` | build/install/start/API enable/traffic 注入与正常插件 E2E，两次完整回滚测试通过 |
 | C | DONE | `c6272df`、`18563bd` | 三个 Kubernetes module 同步至 v0.36.4，隔离 Go1.26.9，真实 v1.36.4 双节点 API/Pod TCP、watch 连接中断/恢复与 Controller 重启通过 |
 | D | DONE | `d9bad08` | CI 配置、本机静态检查、Goal001～005 受影响回归与 cleanup；GitHub Actions run 38701599580 全部 step 通过 |
 
-完整命令、失败过程、来源边界和清理证据见 [results/goal006/README.md](../../results/goal006/README.md)。不将隔离补丁的成功等同于常驻实例已经修复。切换系统插件前须按第 2、3 节与 AGENTS.md 第 19 节另行取得授权。
+完整命令、失败过程、来源边界和清理证据见 [results/goal006/README.md](../../results/goal006/README.md)。常驻切换已按用户单独授权完成；系统发行版插件文件未修改。输入 feature 仍须在接收 backend 报文的 VPP 接口启用。
 
 ## 11. ChatGPT 学习 / 工程验收结论
 
