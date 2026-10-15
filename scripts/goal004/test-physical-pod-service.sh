@@ -29,6 +29,8 @@ remote_route_added=false
 route_marker_created=false
 vpp_route_added=false
 agent_pid=
+proxy_pid=
+agent_kubeconfig=
 local_pid=
 
 ssh_options=(-o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts"
@@ -42,7 +44,7 @@ kube() {
 }
 start_agent() {
   env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-    "$tmp/agent" -kubeconfig "$tmp/kubeconfig" -retry 1s -metrics-listen 127.0.0.1:18085 > "$tmp/agent.log" 2>&1 &
+    "$tmp/agent" -kubeconfig "$agent_kubeconfig" -retry 1s -metrics-listen 127.0.0.1:18085 > "$tmp/agent.log" 2>&1 &
   agent_pid=$!
 }
 die_pod() { printf 'Goal 004 Pod Service: %s\n' "$*" >&2; exit 1; }
@@ -64,6 +66,7 @@ cleanup() {
     [[ -z "$remaining_namespace" ]] || status=1
   fi
   if [[ -n "$agent_pid" ]]; then kill "$agent_pid" 2>/dev/null || true; wait "$agent_pid" 2>/dev/null || true; fi
+  if [[ -n "$proxy_pid" ]]; then kill "$proxy_pid" 2>/dev/null || true; wait "$proxy_pid" 2>/dev/null || true; fi
   if [[ -n "$local_pid" ]]; then kill "$local_pid" 2>/dev/null || true; wait "$local_pid" 2>/dev/null || true; fi
   if [[ "$route_marker_created" == true ]]; then
     printf '[]\n' > "$tmp/empty.json"
@@ -135,6 +138,15 @@ remote_ssh "{ date -u; ip netns list; ip -br link; ip -br addr; ip -4 route; sys
 
 remote_scp "$remote_user@$remote_host:/etc/kubernetes/admin.conf" "$tmp/kubeconfig"
 chmod 600 "$tmp/kubeconfig"
+agent_kubeconfig=$tmp/kubeconfig
+if [[ "${GOAL006_WATCH_DROP:-false}" == true ]]; then
+  python3 -u scripts/goal006/api-watch-proxy.py \
+    --source-kubeconfig "$tmp/kubeconfig" --agent-kubeconfig "$tmp/agent-kubeconfig" \
+    > "$tmp/proxy.log" 2>&1 &
+  proxy_pid=$!
+  wait_for 'loopback API proxy' "grep -Fq 'READY: loopback API proxy' '$tmp/proxy.log'"
+  agent_kubeconfig=$tmp/agent-kubeconfig
+fi
 kube get nodes -o wide
 [[ $(kube get node "$remote_node" -o jsonpath='{.spec.podCIDR}') == 10.244.0.0/24 ]] || die_pod '远端 Node PodCIDR 与路由安全范围不符'
 ! kube get namespace "$namespace" >/dev/null 2>&1 || die_pod '测试 namespace 已存在，拒绝接管'
@@ -245,6 +257,27 @@ vppctl -s "$CLI_SOCKET" clear trace
 vppctl -s "$CLI_SOCKET" clear errors
 vppctl -s "$CLI_SOCKET" trace add virtio-input 128
 ip netns exec "$CLIENT_NS" python3 scripts/goal004/pod_service_traffic.py --pod-ip "$pod_ip" --flows 40 --base-port 52000 --expect both
+if [[ "${GOAL006_WATCH_DROP:-false}" == true ]]; then
+  kill -USR1 "$proxy_pid"
+  wait_for 'API watch proxy 已断开' "grep -Fq 'PAUSED: existing API connections closed' '$tmp/proxy.log'"
+  kube -n "$namespace" patch endpointslice goal004-pod-vip-manual --type=json \
+    -p='[{"op":"replace","path":"/endpoints/1/conditions/ready","value":false}]'
+  sleep 1
+  vppctl -s "$CLI_SOCKET" show cnat translation | grep -Fq "$pod_ip;18080" || die_pod 'API 断开期间 CNAT translation 提前变化'
+  kill -USR2 "$proxy_pid"
+  wait_for 'API watch proxy 已恢复' "grep -Fq 'RESUMED: new API connections accepted' '$tmp/proxy.log'"
+  wait_for 'watch 重连后远端 backend 删除' "! vppctl -s '$CLI_SOCKET' show cnat translation | grep -Fq '$pod_ip;18080'"
+  kill -0 "$agent_pid" || die_pod 'watch 断连后 controller 退出'
+  ip netns exec "$CLIENT_NS" python3 scripts/goal004/pod_service_traffic.py \
+    --pod-ip "$pod_ip" --flows 10 --base-port 56000 --expect local
+  kube -n "$namespace" patch endpointslice goal004-pod-vip-manual --type=json \
+    -p='[{"op":"replace","path":"/endpoints/1/conditions/ready","value":true}]'
+  wait_for 'watch 恢复后远端 backend 返回' "vppctl -s '$CLI_SOCKET' show cnat translation | grep -Fq '$pod_ip;18080'"
+  ip netns exec "$CLIENT_NS" python3 scripts/goal004/pod_service_traffic.py \
+    --pod-ip "$pod_ip" --flows 20 --base-port 57000 --expect both
+  grep -E 'READY:|PAUSED:|RESUMED:|API connection established' "$tmp/proxy.log" | tail -n 12
+  printf 'Goal006 真实 API watch 断连/恢复与 CNAT 重新收敛通过\n'
+fi
 if [[ "${GOAL006_CONTROLLER_RESTART:-false}" == true ]]; then
   kill "$agent_pid"
   wait "$agent_pid" 2>/dev/null || true

@@ -30,4 +30,4 @@ jobs:
       - name: Python syntax
         run: |
           export PYTHONPYCACHEPREFIX="$(mktemp -d)"
-          python3 -m py_compile scripts/goal002/service_traffic.py scripts/goal004/*.py
+          python3 -m py_compile scripts/goal002/service_traffic.py scripts/goal004/*.py scripts/goal006/*.py
