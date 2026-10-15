@@ -42,3 +42,14 @@ sudo scripts/goal006/test-plugin-rollback.sh
 ```
 
 脚本依次注入 `build`、`install`、`start`、`api-enable`、`traffic` 失败，再跑正常路径。两次运行均显示所有阶段后 VPP process/socket 恢复，Goal005 plugin 不残留，Goal001 TAP/namespace 清除，host route/管理接口和双节点相关服务正常。`build` 失败时原 VPP PID 保持不变；其他注入中原实例重新启动，PID 会变化。正常路径还验证插件 API enable/disable、trace、info counter 和 Goal001 ICMP/UDP；日志是 `plugin-rollback-run.log`、`plugin-rollback-repeat.log` 及 `plugin-rollback/*.log`。失败注入由显式环境变量驱动，正常运行不会触发。
+
+## Stage C：Kubernetes 1.36 SDK 与实际 API
+
+状态：**已实现、单元测试和真实双节点 API/Pod TCP 测试通过**。本机实际 API server/kubelet 是 Kubernetes v1.36.4；旧 kind 用 v1.33.1。原仓库三个 Kubernetes module 均为 v0.33.1。按[官方 client-go 兼容矩阵](https://github.com/kubernetes/client-go#compatibility-matrix)及三个 v0.36.4 tag 的 `go.mod`，同步固定 `k8s.io/client-go`、`k8s.io/api`、`k8s.io/apimachinery` 为 v0.36.4。v0.36.4 要求 Go 1.26.0；仓库标明 `go 1.26.0` 与 `toolchain go1.26.9`，使用隔离下载工具链。宿主全局 Go 仍是 1.24.13，GoVPP 仍是 v0.13.0，VPP/集群均未升级。
+
+```bash
+GOTOOLCHAIN=go1.26.9 go test ./...
+GOAL006_CONTROLLER_RESTART=true scripts/goal004/test-physical-pod-service.sh
+```
+
+Go 全包测试通过。真实 v1.36.4 双 Ready 节点测试中，Controller watch/list Service/EndpointSlice 并写入 VPP CNAT；美国节点远端 Pod `10.244.0.200`。初始 TCP VIP 40 flows：本地15、远端25；重启 Controller 后新 20 flows：本地9、远端11，重启日志 `services=1 changed=0`，VPP translation 未丢；将远端 EndpointSlice 改为 false 后 10 flows 全走本地，恢复后 40 flows 本地22、远端18。VPP API dump、trace、Stats 与路由/邻居有输出，最后删除本实验 Service/namespace、CNAT、/32 route 并核对宿主默认路由和管理 NIC，cleanup status=0。日志为 `k8s-upgrade-go-test-1269.log`、`k8s136-real-api-pod-service.log`、`k8s136-real-api-restart.log`。这里重启的是 Controller，**没有中断 API server 网络连接来单独测 watch reconnect**；fake-client/reconciler 单元测试覆盖了重连路径，真实服务器网络中断尚未专项注入。

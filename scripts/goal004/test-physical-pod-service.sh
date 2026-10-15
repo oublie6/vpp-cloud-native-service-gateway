@@ -40,6 +40,11 @@ kube() {
   env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
     kubectl --kubeconfig="$tmp/kubeconfig" "$@"
 }
+start_agent() {
+  env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
+    "$tmp/agent" -kubeconfig "$tmp/kubeconfig" -retry 1s -metrics-listen 127.0.0.1:18085 > "$tmp/agent.log" 2>&1 &
+  agent_pid=$!
+}
 die_pod() { printf 'Goal 004 Pod Service: %s\n' "$*" >&2; exit 1; }
 wait_for() {
   local label=$1 command=$2
@@ -196,9 +201,7 @@ ip netns exec "$SERVER_NS" python3 -u scripts/goal004/traffic.py server --bind 1
 local_pid=$!
 wait_for '本地 backend' "grep -Fq 'backend server ready' '$tmp/local-server.log'"
 go build -o "$tmp/agent" ./cmd/vpp-service-agent
-env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy \
-  "$tmp/agent" -kubeconfig "$tmp/kubeconfig" -retry 1s -metrics-listen 127.0.0.1:18085 > "$tmp/agent.log" 2>&1 &
-agent_pid=$!
+start_agent
 wait_for 'controller 初始同步' "grep -Fq 'services=0 changed=0' '$tmp/agent.log'"
 cat > "$tmp/service.yaml" <<YAML
 apiVersion: v1
@@ -242,6 +245,18 @@ vppctl -s "$CLI_SOCKET" clear trace
 vppctl -s "$CLI_SOCKET" clear errors
 vppctl -s "$CLI_SOCKET" trace add virtio-input 128
 ip netns exec "$CLIENT_NS" python3 scripts/goal004/pod_service_traffic.py --pod-ip "$pod_ip" --flows 40 --base-port 52000 --expect both
+if [[ "${GOAL006_CONTROLLER_RESTART:-false}" == true ]]; then
+  kill "$agent_pid"
+  wait "$agent_pid" 2>/dev/null || true
+  agent_pid=
+  mv "$tmp/agent.log" "$tmp/agent-before-restart.log"
+  start_agent
+  wait_for 'controller cache 重新同步' "grep -Fq 'services=1 changed=0' '$tmp/agent.log'"
+  go run ./cmd/goal002-inspect | grep -F 'CNAT translations=1'
+  ip netns exec "$CLIENT_NS" python3 scripts/goal004/pod_service_traffic.py \
+    --pod-ip "$pod_ip" --flows 20 --base-port 55000 --expect both
+  printf 'Goal006 controller/API 重新连接后新 TCP flow 通过\n'
+fi
 vppctl -s "$CLI_SOCKET" show trace > "$tmp/trace.txt"
 grep -Fq "$pod_ip;18080" "$tmp/trace.txt" || die_pod 'trace 未捕获远端 Pod backend'
 grep -Fq 'created session' "$tmp/trace.txt" || die_pod 'trace 未捕获 CNAT session 创建'
