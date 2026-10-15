@@ -1,6 +1,6 @@
 # Goal 006：CNAT 多 Worker 首包修复 / Plugin 回滚 / Kubernetes 兼容 / CI 收尾
 
-状态：🟡 **Codex 已完成 Stage B～D；Stage A 隔离候选补丁通过回归，常驻插件切换待单独授权；ChatGPT 未验收。**
+状态：🟡 **Stage B～D DONE；Stage A BLOCKED（隔离候选补丁通过，常驻插件切换待单独授权）；ChatGPT 未验收。**
 优先级：P0（Stage A）→ P1（Stage B）→ P2（Stage C、D）。本 Goal 是 Goal002～005 的遗留问题收尾，不新增替代 CNI、通用 NAT、Web 管理系统等功能。
 
 ## 1. 背景与权威证据
@@ -86,10 +86,10 @@
 
 | Stage | Codex 状态 | focused commit | 结果 |
 |---|---|---|---|
-| A | 隔离验证通过；常驻部署待授权 | `4e02181`、`55a12bf` | 原版双 worker 零延迟首包失败复现；固定 VPP v24.10 源码的最小 patch，独立构建与输入 feature，分离 RX 两次 3×100 首包均正确，重启恢复通过；常驻发行版 CNAT 未修改 |
+| A | BLOCKED（常驻部署待授权） | `4e02181`、`55a12bf` | 原版双 worker 零延迟首包失败复现；固定 VPP v24.10 源码的最小 patch，独立构建与输入 feature，分离 RX 两次 3×100 首包均正确，重启恢复通过；常驻发行版 CNAT 未修改 |
 | B | DONE | `0e3f94c` | build/install/start/API enable/traffic 注入与正常插件 E2E，两次完整回滚测试通过 |
 | C | DONE | `c6272df` | 三个 Kubernetes module 同步至 v0.36.4，隔离 Go1.26.9，真实 v1.36.4 双节点 API/Pod TCP 与 Controller 重启通过 |
-| D | DONE（本机） | 见本 Stage 提交 | CI 配置、本机静态检查、Goal001～005 受影响回归与 cleanup；远端 CI 尚未运行 |
+| D | DONE | `d9bad08` | CI 配置、本机静态检查、Goal001～005 受影响回归与 cleanup；GitHub Actions run 38701599580 全部 step 通过 |
 
 完整命令、失败过程、来源边界和清理证据见 [results/goal006/README.md](../../results/goal006/README.md)。不将隔离补丁的成功等同于常驻实例已经修复。切换系统插件前须按第 2、3 节与 AGENTS.md 第 19 节另行取得授权。
 

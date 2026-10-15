@@ -6,7 +6,7 @@
 
 ## Stage A：CNAT 多 worker 首个 UDP 回包
 
-状态：**隔离补丁和回归已通过；常驻实例尚未部署补丁，Goal006 整体仍待处理。** Goal006 明确要求修改系统安装的插件前单独授权，故仓库保留 patch 和独立构建入口，当前常驻 VPP 仍加载发行版 CNAT。
+状态：**BLOCKED（隔离补丁和回归已通过，常驻实例部署待单独授权）**。Goal006 明确要求修改系统安装的插件前单独授权，故仓库保留 patch 和独立构建入口，当前常驻 VPP 仍加载发行版 CNAT。
 
 ### 原始失败与机制依据
 
@@ -35,7 +35,7 @@ GOAL006_PLUGIN_PATH=/tmp/goal006-cnat.<本次构建>/build/vpp_plugins \
 
 ## Stage B：Goal005 插件异常回滚
 
-状态：**已实现并在本机两次完整通过**。`scripts/goal005/test-plugin.sh` 在构建完成后才停原实例，分别跟踪原 VPP 是否已停止、候选插件是否由脚本安装、目标 VPP 是否启动、拓扑是否创建。插件采用唯一临时文件并通过无覆盖 hard link 安装；若目标路径预存同名 `.so`，安装前拒绝覆盖。清理仅删除自身安装的文件和有 ownership marker 的 TAP/namespace，并检查原实例 CLI/API socket、插件缺席、默认路由和管理接口。
+状态：**DONE（本机两次完整通过）**。`scripts/goal005/test-plugin.sh` 在构建完成后才停原实例，分别跟踪原 VPP 是否已停止、候选插件是否由脚本安装、目标 VPP 是否启动、拓扑是否创建。插件采用唯一临时文件并通过无覆盖 hard link 安装；若目标路径预存同名 `.so`，安装前拒绝覆盖。清理仅删除自身安装的文件和有 ownership marker 的 TAP/namespace，并检查原实例 CLI/API socket、插件缺席、默认路由和管理接口。
 
 ```bash
 sudo scripts/goal006/test-plugin-rollback.sh
@@ -45,7 +45,7 @@ sudo scripts/goal006/test-plugin-rollback.sh
 
 ## Stage C：Kubernetes 1.36 SDK 与实际 API
 
-状态：**已实现、单元测试和真实双节点 API/Pod TCP 测试通过**。本机实际 API server/kubelet 是 Kubernetes v1.36.4；旧 kind 用 v1.33.1。原仓库三个 Kubernetes module 均为 v0.33.1。按[官方 client-go 兼容矩阵](https://github.com/kubernetes/client-go#compatibility-matrix)及三个 v0.36.4 tag 的 `go.mod`，同步固定 `k8s.io/client-go`、`k8s.io/api`、`k8s.io/apimachinery` 为 v0.36.4。v0.36.4 要求 Go 1.26.0；仓库标明 `go 1.26.0` 与 `toolchain go1.26.9`，使用隔离下载工具链。宿主全局 Go 仍是 1.24.13，GoVPP 仍是 v0.13.0，VPP/集群均未升级。
+状态：**DONE（单元测试和真实双节点 API/Pod TCP 测试通过）**。本机实际 API server/kubelet 是 Kubernetes v1.36.4；旧 kind 用 v1.33.1。原仓库三个 Kubernetes module 均为 v0.33.1。按[官方 client-go 兼容矩阵](https://github.com/kubernetes/client-go#compatibility-matrix)及三个 v0.36.4 tag 的 `go.mod`，同步固定 `k8s.io/client-go`、`k8s.io/api`、`k8s.io/apimachinery` 为 v0.36.4。v0.36.4 要求 Go 1.26.0；仓库标明 `go 1.26.0` 与 `toolchain go1.26.9`，使用隔离下载工具链。宿主全局 Go 仍是 1.24.13，GoVPP 仍是 v0.13.0，VPP/集群均未升级。
 
 ```bash
 GOTOOLCHAIN=go1.26.9 go test ./...
@@ -56,7 +56,7 @@ Go 全包测试通过。真实 v1.36.4 双 Ready 节点测试中，Controller wa
 
 ## Stage D：CI、受影响回归与清理
 
-状态：**本机检查通过；GitHub Actions 文件已加入，远端 runner 结果待 push 后观察**。`.github/workflows/verify.yml` 对 push/main 和 PR 执行 Go format、`go test ./...`、`go vet ./...`、所有 Goal shell 的 `bash -n` 与仓库 Python 文件的 `py_compile`；仅 `contents: read`，Go 固定 1.26.9。root/VPP/SSH/真实集群 E2E 必须本地手动执行。
+状态：**DONE**。`.github/workflows/verify.yml` 对 push/main 和 PR 执行 Go format、`go test ./...`、`go vet ./...`、所有 Goal shell 的 `bash -n` 与仓库 Python 文件的 `py_compile`；仅 `contents: read`，Go 固定 1.26.9。首次 [GitHub Actions run 38701599580](https://github.com/oublie6/vpp-cloud-native-service-gateway/actions/runs/38701599580) 在提交 `d9bad08` 上 `completed/success`，各静态/单元检查 step 均为 `success`。root/VPP/SSH/真实集群 E2E 必须本地手动执行。
 
 本机验证：Go format 无输出；`GOTOOLCHAIN=go1.26.9 go test ./...` exit 0、`go vet ./...` exit 0；`bash -n scripts/goal*/*.sh` exit 0；Python `py_compile` exit 0；workflow YAML 可解析。Goal001/002 FIB 与 TAP ICMP 使用 `scripts/goal002/test-fib.sh` 复跑，3/3 ping，route 删除后 0/2，exit 0；Goal002 CNAT TCP/UDP 与删除在 Stage A 的多 worker、单 main 回归通过；Goal003 reconciler 单元测试及 Stage C 真实 API/Pod TCP 通过；Goal004 多 worker 与远端 Pod TCP 见 Stage A/C；Goal005 插件见 Stage B。没有重新运行全部历史 benchmark，也没有硬件吞吐结论。
 
