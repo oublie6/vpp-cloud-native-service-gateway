@@ -1,6 +1,6 @@
 # Goal 006：CNAT 多 Worker 首包修复 / Plugin 回滚 / Kubernetes 兼容 / CI 收尾
 
-状态：🟡 **已由 ChatGPT 于 2026-10-15 正式设计并授权 Codex 开发；未实现、未验收。**
+状态：🟡 **Codex 已完成 Stage B～D；Stage A 隔离候选补丁通过回归，常驻插件切换待单独授权；ChatGPT 未验收。**
 优先级：P0（Stage A）→ P1（Stage B）→ P2（Stage C、D）。本 Goal 是 Goal002～005 的遗留问题收尾，不新增替代 CNI、通用 NAT、Web 管理系统等功能。
 
 ## 1. 背景与权威证据
@@ -65,9 +65,9 @@
 ## 7. 最终交付与验收门槛
 
 - [ ] Stage A 零人为延迟首包复现、根因源码证据、真正修复；3×100 首次 UDP 回包正确且跨 worker / 正反向 TCP/UDP 回归完成。
-- [ ] Stage B 三类失败注入均验证原 VPP/网络状态恢复，插件正常启停/trace/GoVPP 无回退。
-- [ ] Stage C 版本矩阵、同 minor SDK/toolchain 兼容决策和真实 API server / VPP 回归均有证据；任何阻塞明确记录。
-- [ ] Stage D CI 静态检查通过，Goal001～005 的受影响回归和 host cleanup 通过。
+- [x] Stage B 三类失败注入均验证原 VPP/网络状态恢复，插件正常启停/trace/GoVPP 无回退。
+- [x] Stage C 版本矩阵、同 minor SDK/toolchain 兼容决策和真实 API server / VPP 回归均有证据；真实 watch 网络中断未专项注入，见 evidence。
+- [x] Stage D CI 静态检查本机通过，Goal001～005 的受影响回归和 host cleanup 通过；远端 GitHub Actions 结果待观察。
 - [ ] 所有结论均区分 official source / 真实运行 / 推断；results/goal006/README.md 完整可复现。
 - [ ] Codex 实现记录齐全；**ChatGPT 学习/工程验收结论单独待审**。
 
@@ -84,7 +84,14 @@
 
 ## 10. Codex 实现记录
 
-尚未开始。按 Stage A→B→C→D 逐项添加最小补丁、commit、真实测试与清理记录；失败不得跳过。
+| Stage | Codex 状态 | focused commit | 结果 |
+|---|---|---|---|
+| A | 隔离验证通过；常驻部署待授权 | `4e02181`、`55a12bf` | 原版双 worker 零延迟首包失败复现；固定 VPP v24.10 源码的最小 patch，独立构建与输入 feature，分离 RX 两次 3×100 首包均正确，重启恢复通过；常驻发行版 CNAT 未修改 |
+| B | DONE | `0e3f94c` | build/install/start/API enable/traffic 注入与正常插件 E2E，两次完整回滚测试通过 |
+| C | DONE | `c6272df` | 三个 Kubernetes module 同步至 v0.36.4，隔离 Go1.26.9，真实 v1.36.4 双节点 API/Pod TCP 与 Controller 重启通过 |
+| D | DONE（本机） | 见本 Stage 提交 | CI 配置、本机静态检查、Goal001～005 受影响回归与 cleanup；远端 CI 尚未运行 |
+
+完整命令、失败过程、来源边界和清理证据见 [results/goal006/README.md](../../results/goal006/README.md)。不将隔离补丁的成功等同于常驻实例已经修复。切换系统插件前须按第 2、3 节与 AGENTS.md 第 19 节另行取得授权。
 
 ## 11. ChatGPT 学习 / 工程验收结论
 

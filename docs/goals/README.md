@@ -11,11 +11,11 @@ Goal 002  ✅ 已实现并有真实 VPP 证据；ChatGPT 代码/证据审查通�
 Goal 003  ✅ 已实现并有 kind/VPP 证据；ChatGPT 代码/证据审查通过
 Goal 004  🟡 已实现并有真实远端 Pod TCP E2E；多 worker UDP 首包缺陷仍未解决，附条件通过
 Goal 005  ✅ 功能审查通过；异常安装回滚待加固
-Goal 006  ⬜ 当前正式 Goal：CNAT 首包 / Plugin 回滚 / SDK 兼容 / CI 收尾
+Goal 006  🟡 B～D 已实现；A 隔离补丁通过，常驻部署待授权；ChatGPT 待验收
 ~~~
 
 当前 Goal 文档：[006-cnat-multiworker-hardening-and-release.md](006-cnat-multiworker-hardening-and-release.md)。
-说明：Goal002～005 的“代码与已记录证据审查”不等于本轮新做了服务器独立复跑；各旧 Goal 正式文档仍可能有历史的“待验收”文本，最终收尾应由 Codex 准确更新审查状态和证据边界。Goal006 未启动实现，更未通过验收。
+说明：Goal002～005 的“代码与已记录证据审查”不等于本轮新做了服务器独立复跑；各旧 Goal 正式文档仍可能有历史的“待验收”文本。Goal006 的实际复验与限制见 [results/goal006](../../results/goal006/README.md)，不能把隔离 CNAT 补丁视作常驻实例已修复。
 
 项目采用 5 个较大的 Goal：
 

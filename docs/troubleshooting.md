@@ -7,3 +7,5 @@
 5. **VPP/controller 重启后缺 CNAT**：检查 `cmd/vpp-service-agent` 的 reconcile 指标、API socket 和 `cnat_translation_dump`；controller 会在 API 恢复后重新收敛。不能仅凭进程活着认定 actual state 正确。
 
 插件复验：`scripts/goal005/test-plugin.sh`。它会临时重启独立 VPP、建立/清理 Goal 001 拓扑，并复查默认 route、管理 IPv4、namespace 和插件文件；请在无其他 Goal 001 拓扑实验时运行。
+
+Goal006：发行版 CNAT 在双 worker、TAP 分离 RX、后端零人为延迟时若首个 UDP 应答源为 backend 而非 VIP，检查 `tap101/tap102` RX placement、`show trace` 的逆向路径是否经过 `ip4-cnat-tx`、`show cnat session` 与客户端 /32 FIB。隔离候选 patch 的构建/3×100 复验见 `results/goal006/README.md`；不能用后端 sleep 或单 worker 当修复。插件异常回滚可显式运行 `scripts/goal006/test-plugin-rollback.sh`，默认正常脚本不会注入失败。修改系统已安装 CNAT 插件前须取得单独授权。

@@ -529,3 +529,5 @@ Goal001 现成的证据、代码与验收以 `docs/goals/001-vpp-govpp-environme
 Codex **仅被授权**围绕 Goal006 Stage A→D 完成遗留收尾，并可连续推进。Stage A 为最高优先级；200ms sleep、跳过首包或退回单 worker 不是修复。破坏性网络/系统变更必须服从 Goal006 的边界，保留 SSH/TCP Node 连接及 Kubernetes 现有状态，不私自升级 VPP/kubelet 或修改宿主管理网络。若需修改现有系统安装的 VPP 二进制/插件、真实集群控制平面或 live 连接，停止并取得单独授权。
 
 运行证据放到 results/goal006/README.md；所有 Stage 按真实结果记录 DONE/BLOCKED，未修复不得宣称全部完成。代码完成后由 ChatGPT 再次审查并给出最终验收。不得由 Codex 擅自创建 Goal007。
+
+2026-10-15 执行进度：Goal006 Stage B（插件失败回滚）、C（Kubernetes v0.36.4 SDK/真实 API）、D（CI 与受影响回归）已由 Codex 实现并本机验证；Stage A 的 VPP 24.10 最小 CNAT patch 仅在隔离实例完成双 worker 零延迟首包回归。常驻插件仍是发行版版本，按上述授权边界待单独决定是否切换；ChatGPT 最终验收未进行。以 `results/goal006/README.md` 的证据和限制为准。

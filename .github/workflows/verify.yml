@@ -1,0 +1,33 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.9'
+          cache: true
+      - name: Go format
+        run: |
+          files=$(git ls-files '*.go')
+          test -z "$(gofmt -l $files)"
+      - name: Go tests
+        run: go test ./...
+      - name: Go vet
+        run: go vet ./...
+      - name: Shell syntax
+        run: bash -n scripts/goal001/*.sh scripts/goal002/*.sh scripts/goal003/*.sh scripts/goal004/*.sh scripts/goal005/*.sh scripts/goal006/*.sh
+      - name: Python syntax
+        run: |
+          export PYTHONPYCACHEPREFIX="$(mktemp -d)"
+          python3 -m py_compile scripts/goal002/service_traffic.py scripts/goal004/*.py

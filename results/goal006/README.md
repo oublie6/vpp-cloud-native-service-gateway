@@ -53,3 +53,17 @@ GOAL006_CONTROLLER_RESTART=true scripts/goal004/test-physical-pod-service.sh
 ```
 
 Go 全包测试通过。真实 v1.36.4 双 Ready 节点测试中，Controller watch/list Service/EndpointSlice 并写入 VPP CNAT；美国节点远端 Pod `10.244.0.200`。初始 TCP VIP 40 flows：本地15、远端25；重启 Controller 后新 20 flows：本地9、远端11，重启日志 `services=1 changed=0`，VPP translation 未丢；将远端 EndpointSlice 改为 false 后 10 flows 全走本地，恢复后 40 flows 本地22、远端18。VPP API dump、trace、Stats 与路由/邻居有输出，最后删除本实验 Service/namespace、CNAT、/32 route 并核对宿主默认路由和管理 NIC，cleanup status=0。日志为 `k8s-upgrade-go-test-1269.log`、`k8s136-real-api-pod-service.log`、`k8s136-real-api-restart.log`。这里重启的是 Controller，**没有中断 API server 网络连接来单独测 watch reconnect**；fake-client/reconciler 单元测试覆盖了重连路径，真实服务器网络中断尚未专项注入。
+
+## Stage D：CI、受影响回归与清理
+
+状态：**本机检查通过；GitHub Actions 文件已加入，远端 runner 结果待 push 后观察**。`.github/workflows/verify.yml` 对 push/main 和 PR 执行 Go format、`go test ./...`、`go vet ./...`、所有 Goal shell 的 `bash -n` 与仓库 Python 文件的 `py_compile`；仅 `contents: read`，Go 固定 1.26.9。root/VPP/SSH/真实集群 E2E 必须本地手动执行。
+
+本机验证：Go format 无输出；`GOTOOLCHAIN=go1.26.9 go test ./...` exit 0、`go vet ./...` exit 0；`bash -n scripts/goal*/*.sh` exit 0；Python `py_compile` exit 0；workflow YAML 可解析。Goal001/002 FIB 与 TAP ICMP 使用 `scripts/goal002/test-fib.sh` 复跑，3/3 ping，route 删除后 0/2，exit 0；Goal002 CNAT TCP/UDP 与删除在 Stage A 的多 worker、单 main 回归通过；Goal003 reconciler 单元测试及 Stage C 真实 API/Pod TCP 通过；Goal004 多 worker 与远端 Pod TCP 见 Stage A/C；Goal005 插件见 Stage B。没有重新运行全部历史 benchmark，也没有硬件吞吐结论。
+
+完成测试后 `ip netns list` 为空、VPP `show interface` 只有 `local0`；宿主默认路由仍经 `eth0` 的 10.0.138.1，管理地址为 10.0.138.51；原 VPP CLI/API 可用。两个真实 Kubernetes 节点的 TCP tunnel、kubelet、containerd 未作为 cleanup 目标。
+
+### 仍需处理
+
+- 常驻发行版 CNAT 插件未替换，常驻实例尚不具备隔离候选补丁的零延迟双 worker 保证；安装/切换常驻插件按 Goal006 和 AGENTS.md 第 19 节需要用户单独授权。
+- 独立候选补丁只经过所列功能回归；真实 API server watch 网络中断、上游合入/广泛并发压力没有在本 Goal 证明。
+- ChatGPT 学习/工程最终验收：**待验收**。

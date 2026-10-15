@@ -19,6 +19,8 @@ client TAP -> virtio-input -> ethernet-input -> ip4-input
 
 Goal 005 自定义 API 仅控制单接口 feature 开关；正式 Service 控制仍通过 GoVPP CNAT/FIB。插件测试后卸载，常态 VPP 不加载该插件。
 
+Goal 006 在**隔离构建**中把 CNAT reverse session 放到 `CNAT_LOCATION_INPUT`，并仅在实验后端 TAP 启用 `cnat-input-ip4`。输入 feature 在普通 FIB lookup 前匹配 reverse session，使首个快速后端应答不依赖 main thread 异步安装 client /32 FIB 的完成时刻。发行版 CNAT 仍是常驻实例的插件；补丁没有安装到系统目录。来源、时序推断和测试范围见 [Goal006 证据](../results/goal006/README.md)。
+
 ## 约束
 
-隔离 VIP 不与 kube-proxy 的普通 ClusterIP 争用。主要验证基于 VPP 24.10、TAP/Linux kernel；已有受控双 worker 功能复验，以及经 SSH/TCP TUN 的真实跨主机 Service packet E2E。2026-10-15 两个 Kubernetes 节点均为 `Ready`，补充实验已验证 VPP CNAT 到美国节点真实 Pod 的 TCP 正反向路径和 EndpointSlice readiness 收敛。公网 WireGuard UDP 仍故障；Cilium VXLAN UDP 位于 SSH/TCP TUN 内部。没有真实 NIC benchmark 结论。详细运行结果见 `results/goal001`～`results/goal005`。
+隔离 VIP 不与 kube-proxy 的普通 ClusterIP 争用。主要验证基于 VPP 24.10、TAP/Linux kernel；已有受控双 worker 功能复验，以及经 SSH/TCP TUN 的真实跨主机 Service packet E2E。2026-10-15 两个 Kubernetes 节点均为 `Ready`，补充实验已验证 VPP CNAT 到美国节点真实 Pod 的 TCP 正反向路径和 EndpointSlice readiness 收敛。Kubernetes SDK 已匹配 v1.36.4，Go1.26.9 由隔离工具链提供。公网 WireGuard UDP 仍故障；Cilium VXLAN UDP 位于 SSH/TCP TUN 内部。没有真实 NIC benchmark 结论。详细运行结果见 `results/goal001`～`results/goal006`。

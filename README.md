@@ -431,7 +431,7 @@ VPP Cloud-Native Service Gateway
    ├─ Goal 003                       🟡 已实现并通过 kind/VPP 实测，待 ChatGPT 最终验收
    ├─ Goal 004                       🟡 双逻辑节点及真实双 Ready 节点 TCP Pod 实测，待 ChatGPT 最终验收
    └─ Goal 005                       🟡 小型 VPP plugin 已实现并实测，待 ChatGPT 最终验收
-   └─ Goal 006                       ⬜ 当前新 Goal：多 worker UDP 首包、Plugin 回滚、SDK 兼容、CI
+   └─ Goal 006                       🟡 B～D 已实现；A 隔离补丁通过，常驻部署待授权
 ~~~
 
 Goal 002 的 GoVPP FIB、Stats、CNAT TCP/UDP 双 backend 与动态更新已在 VPP 24.10 实机复验；ChatGPT 学习/工程验收待确认。
@@ -453,7 +453,7 @@ Goal 001 文档：`docs/goals/001-vpp-govpp-environment-baseline.md`；实际运
 
 ## Goal006：遗留稳定性问题收尾（2026-10-15）
 
-[正式 Goal006](docs/goals/006-cnat-multiworker-hardening-and-release.md)：P0 多 worker 零人为延迟首个 UDP 回包正反向改写缺陷的复现、根因和修复；P1 插件安装/启动异常回滚；P2 client-go v0.33.1 与真实 Kubernetes v1.36.4 的兼容性、按官方 tag 评估升级；P2 CI 静态检查与 Goal001～005 全量受影响回归。**禁止以 200ms backend delay 冒充修复**。保留 VPP 24.10 和现有双节点 TCP tunnel/管理网络，待真实复验证据到位后由 ChatGPT 最终验收。
+[正式 Goal006](docs/goals/006-cnat-multiworker-hardening-and-release.md)：发行版 CNAT 的双 worker 零延迟 UDP 首包错误已复现；固定 VPP v24.10 的隔离补丁在分离 RX 下通过每轮 100 flow、三轮首回包验证和重启复验。Goal005 插件失败回滚、Kubernetes v1.36.4 SDK/真实 API 与 Pod TCP、最小 CI 和受影响回归也已实现。**常驻 VPP 仍使用发行版 CNAT**；切换系统安装插件需要单独授权，ChatGPT 最终验收仍待进行。完整证据：[results/goal006](results/goal006/README.md)。
 
 ---
 
