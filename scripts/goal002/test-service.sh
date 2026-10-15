@@ -19,16 +19,38 @@ management_if=$(ip -4 route show default | awk 'NR == 1 { for (i = 1; i <= NF; i
 [[ -n "$management_if" ]] || die '无法确定宿主管理接口'
 before_management=$(ip -br addr show "$management_if")
 server_pid=
+client_capture_pid=
+server_capture_pid=
 created=false
+input_feature_enabled=false
 traffic_log=$(mktemp /tmp/goal002-traffic.XXXXXX)
 server_log=$(mktemp /tmp/goal002-server.XXXXXX)
 
 cleanup() {
   local status=$?
   trap - EXIT
+  if [[ -n "${GOAL006_DIAGNOSTICS_DIR:-}" && "$created" == true ]]; then
+    # 仅用于 Goal006 隔离复现；在删除 session/TAP 前保留失败瞬间的状态。
+    vppctl -s "$CLI_SOCKET" show trace > "$GOAL006_DIAGNOSTICS_DIR/trace.txt" 2>&1 || true
+    vppctl -s "$CLI_SOCKET" show ip fib 10.10.1.2/32 > "$GOAL006_DIAGNOSTICS_DIR/client-fib.txt" 2>&1 || true
+    vppctl -s "$CLI_SOCKET" show cnat session > "$GOAL006_DIAGNOSTICS_DIR/sessions.txt" 2>&1 || true
+    vppctl -s "$CLI_SOCKET" show interface rx-placement > "$GOAL006_DIAGNOSTICS_DIR/rx-placement.txt" 2>&1 || true
+    vppctl -s "$CLI_SOCKET" show errors > "$GOAL006_DIAGNOSTICS_DIR/errors.txt" 2>&1 || true
+    go run ./cmd/goal002-inspect > "$GOAL006_DIAGNOSTICS_DIR/api-state.txt" 2>&1 || true
+    cp "$server_log" "$GOAL006_DIAGNOSTICS_DIR/backend.log" 2>/dev/null || true
+  fi
+  for capture_pid in "$client_capture_pid" "$server_capture_pid"; do
+    if [[ -n "$capture_pid" ]]; then
+      kill "$capture_pid" 2>/dev/null || true
+      wait "$capture_pid" 2>/dev/null || true
+    fi
+  done
   if [[ -n "$server_pid" ]]; then
     kill "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
+  fi
+  if [[ "$input_feature_enabled" == true ]]; then
+    go run ./cmd/goal006-feature disable || status=1
   fi
   if [[ "$created" == true ]]; then
     go run ./cmd/goal002-service -proto udp delete || status=1
@@ -53,14 +75,31 @@ if [[ -n "${GOAL002_RX_WORKER:-}" ]]; then
   [[ "$GOAL002_RX_WORKER" =~ ^[0-9]+$ ]] || die 'GOAL002_RX_WORKER 必须是 worker 编号'
   server_worker=${GOAL002_SERVER_RX_WORKER:-$GOAL002_RX_WORKER}
   [[ "$server_worker" =~ ^[0-9]+$ ]] || die 'GOAL002_SERVER_RX_WORKER 必须是 worker 编号'
-  vppctl -s "$CLI_SOCKET" set interface rx-placement tap101 queue 0 worker "$GOAL002_RX_WORKER"
-  vppctl -s "$CLI_SOCKET" set interface rx-placement tap102 queue 0 worker "$server_worker"
+  placement_matches() {
+    local iface=$1 worker=$2
+    vppctl -s "$CLI_SOCKET" show interface rx-placement | awk -v iface="$iface" -v wanted="vpp_wk_$worker" '
+      /^Thread / { current=$3; gsub(/[():]/, "", current) }
+      $1 == iface && $2 == "queue" { found=1; if (current == wanted) matched=1 }
+      END { exit !(found && matched) }
+    '
+  }
+  if ! placement_matches tap101 "$GOAL002_RX_WORKER"; then
+    vppctl -s "$CLI_SOCKET" set interface rx-placement tap101 queue 0 worker "$GOAL002_RX_WORKER"
+  fi
+  if ! placement_matches tap102 "$server_worker"; then
+    vppctl -s "$CLI_SOCKET" set interface rx-placement tap102 queue 0 worker "$server_worker"
+  fi
   vppctl -s "$CLI_SOCKET" show interface rx-placement
 fi
 go run ./cmd/goal002-fib setup
 ip -n "$CLIENT_NS" route replace default via "$CLIENT_GW" dev "$CLIENT_HOST_IF"
 ip -n "$SERVER_NS" route replace default via "$SERVER_GW" dev "$SERVER_HOST_IF"
 ip -n "$SERVER_NS" addr add 10.10.2.3/24 dev "$SERVER_HOST_IF"
+if [[ "${GOAL006_ENABLE_INPUT_FEATURE:-false}" == true ]]; then
+  go run ./cmd/goal006-feature enable
+  input_feature_enabled=true
+  vppctl -s "$CLI_SOCKET" show interface features tap102 | grep -F 'cnat-input-ip4'
+fi
 
 # 双 worker 下首个 UDP reply 可能在邻居解析时丢失；先验证并完成双向 ARP。
 for backend in 10.10.2.2 10.10.2.3; do
@@ -80,6 +119,40 @@ grep -Fq 'backend server ready' "$server_log" || die 'backend server 未就绪'
 go run ./cmd/goal002-service -proto udp apply
 go run ./cmd/goal002-service -proto tcp apply
 vppctl -s "$CLI_SOCKET" show ip fib 198.18.0.10/32 | grep -F 'cnat-client'
+
+if [[ -n "${GOAL006_DIAGNOSTICS_DIR:-}" ]]; then
+  [[ -d "$GOAL006_DIAGNOSTICS_DIR" && -O "$GOAL006_DIAGNOSTICS_DIR" ]] || die 'Goal006 diagnostics 目录不可用'
+  vppctl -s "$CLI_SOCKET" clear trace
+  vppctl -s "$CLI_SOCKET" clear errors
+  vppctl -s "$CLI_SOCKET" trace add virtio-input 32
+  ip netns exec "$CLIENT_NS" tcpdump -i "$CLIENT_HOST_IF" -nn -U -s 128 \
+    -w "$GOAL006_DIAGNOSTICS_DIR/client-tap.pcap" 'udp and port 18080' \
+    > "$GOAL006_DIAGNOSTICS_DIR/client-tcpdump.log" 2>&1 &
+  client_capture_pid=$!
+  ip netns exec "$SERVER_NS" tcpdump -i "$SERVER_HOST_IF" -nn -U -s 128 \
+    -w "$GOAL006_DIAGNOSTICS_DIR/server-tap.pcap" 'udp and port 18080' \
+    > "$GOAL006_DIAGNOSTICS_DIR/server-tcpdump.log" 2>&1 &
+  server_capture_pid=$!
+  for capture_log in client-tcpdump.log server-tcpdump.log; do
+    for attempt in {1..50}; do
+      grep -Fq 'listening on' "$GOAL006_DIAGNOSTICS_DIR/$capture_log" && break
+      sleep 0.05
+    done
+    grep -Fq 'listening on' "$GOAL006_DIAGNOSTICS_DIR/$capture_log" || die "tcpdump 未就绪：$capture_log"
+  done
+fi
+
+if [[ "${GOAL006_FIRST_REPLY_REGRESSION:-false}" == true ]]; then
+  for round in 1 2 3; do
+    base_port=$((30000 + round * 1000))
+    ip netns exec "$CLIENT_NS" python3 scripts/goal002/service_traffic.py client \
+      --proto udp --flows 100 --base-port "$base_port" --repeats 1 --require-both \
+      > "$traffic_log"
+    [[ $(grep -c '^udp flow ' "$traffic_log") -eq 100 ]] || die "第 $round 轮 UDP flow 数不足"
+    tail -n 1 "$traffic_log"
+    printf 'Goal006 zero-delay UDP first reply: round=%d flows=100 VIP peers=100\n' "$round"
+  done
+fi
 
 ip netns exec "$CLIENT_NS" python3 scripts/goal002/service_traffic.py client --proto udp --flows 20 --base-port 20000 --repeats 2 --require-both | tee "$traffic_log"
 old_index=$(awk '$1 == "udp" && $2 == "flow" && $4 == "backend" && $5 == "10.10.2.3" { print $3; exit }' "$traffic_log")

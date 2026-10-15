@@ -1,0 +1,34 @@
+# Goal 006 运行证据（2026-10-15）
+
+环境：Ubuntu 20.04 / kernel 5.15.0-139、VPP 24.10-release、GoVPP v0.13.0。实验使用 Goal001 的 Linux TAP 与 namespace；`tap101` 接 `ns-client` 10.10.1.2，`tap102` 接 `ns-server` 10.10.2.2；VIP 为 198.18.0.10:18080，两个 UDP backend 是 10.10.2.2/.3:18080。默认路由、管理接口以及两个真实 Kubernetes 节点不属于实验资源。
+
+大型日志、pcap、core 和宿主快照只保存在本机 root 可读目录 `/root/goal006-evidence/`，不提交仓库。下面保留可复跑命令和关键观测；本机路径不构成跨机器共享证据。
+
+## Stage A：CNAT 多 worker 首个 UDP 回包
+
+状态：**隔离补丁和回归已通过；常驻实例尚未部署补丁，Goal006 整体仍待处理。** Goal006 明确要求修改系统安装的插件前单独授权，故仓库保留 patch 和独立构建入口，当前常驻 VPP 仍加载发行版 CNAT。
+
+### 原始失败与机制依据
+
+原始发行版 CNAT、`tap101 → vpp_wk_0`、`tap102 → vpp_wk_1`、后端零人为延迟时，首个 UDP 应答的客户端 peer 为 `10.10.2.3:18080` 而不是 `198.18.0.10:18080`；两次复现。客户端请求的 trace 有 `ip4-cnat-tx created session`，后端应答从 `virtio-input → ethernet-input → ip4-input → ip4-lookup → ip4-rewrite → tap101-output`，缺少 `ip4-cnat-tx`。后端日志证实收到请求。失败后的 API dump 已显示 CNAT sessions=2、客户端 /32 `cnat-client` interpose，说明该 FIB 项在采集时已经创建，不能把它误记为从未创建。对应原始日志是 `multiworker-zero-delay-original.log`、`multiworker-first-reply-diagnostic.log` 和 `first-reply/`。
+
+官方 VPP v24.10 对应提交 `cfa0953251cbab435307baf3dcd249fd95afaf1f`：[`cnat_node_vip.c`](https://github.com/FDio/vpp/blob/cfa0953251cbab435307baf3dcd249fd95afaf1f/src/plugins/cnat/cnat_node_vip.c) 为 VIP 流创建 FIB 位置的 reverse session；[`cnat_node.h`](https://github.com/FDio/vpp/blob/cfa0953251cbab435307baf3dcd249fd95afaf1f/src/plugins/cnat/cnat_node.h) 的 `cnat_rsession_create` 先写 reverse hash，遇到未学习客户端再异步 RPC 到 main thread；[`cnat_client.c`](https://github.com/FDio/vpp/blob/cfa0953251cbab435307baf3dcd249fd95afaf1f/src/plugins/cnat/cnat_client.c) 的 `cnat_client_learn` 安装 client FIB；[`cnat_node_feature.c`](https://github.com/FDio/vpp/blob/cfa0953251cbab435307baf3dcd249fd95afaf1f/src/plugins/cnat/cnat_node_feature.c) 提供 `ip4-unicast` 输入 feature。由源码顺序和失败 trace 推断：首个后端应答可早于 main thread 安装 client FIB，到普通 FIB 转发而错过逆向 CNAT。这个实验支持该竞争解释，尚未证明不存在其他竞争。
+
+### 最小候选修复与复验
+
+`patches/goal006-cnat-return-input.patch` 将 reverse session 的查找位置从 `CNAT_LOCATION_FIB` 调整为 `CNAT_LOCATION_INPUT`；`cmd/goal006-feature` 用 GoVPP 在 `tap102` 的 `ip4-unicast` arc 启用 `cnat-input-ip4`。这样已创建的 reverse session 在 FIB 查找前可匹配，不等待异步 client FIB 学习。`scripts/goal006/build-cnat-patch.sh` 下载固定提交并校验源码 SHA256，仅在 `/tmp/goal006-cnat.*` 构建；未覆盖 `/usr/lib` 中的插件。
+
+复跑命令（需 root、独立 VPP 空闲并通过脚本的 ownership 检查）：
+
+```bash
+scripts/goal006/build-cnat-patch.sh
+GOAL006_PLUGIN_PATH=/tmp/goal006-cnat.<本次构建>/build/vpp_plugins \
+  GOAL006_ENABLE_INPUT_FEATURE=true GOAL006_FIRST_REPLY_REGRESSION=true \
+  GOAL004_REPLY_DELAY=0 scripts/goal004/test-multiworker.sh
+```
+
+原始分离 RX 的干净构建实测 3 轮 × 100 个全新 UDP flow，逐个校验首次 peer，三轮分别 **100/100、100/100、100/100**。reverse trace 显示 `ip4-cnat-tx found session`、源改写为 VIP，session dump 的 reverse 项标为 `input`。同 worker RX 3×100 和发行版单 main 3×100 也全通过；TCP、双 backend、backend 增删、Service 删除与 API dump 均通过。隔离 VPP 重启后重新启用 feature、重连 GoVPP，再跑两次完整 3×100，重启前后均为每轮 100/100，最后恢复原单 main VPP。日志：`multiworker-clean-build-3x100.log`、`multiworker-same-rx-3x100.log`、`single-main-stock-3x100.log`、`multiworker-restart-regression-2.log`。
+
+排障过程：首次重启回归在重复设置已正确的 TAP RX placement 时触发 VPP worker barrier abort；core 栈位于 `set_hw_interface_rx_placement`，而非 CNAT。脚本现先查询 placement，只在不同值时更改，并在异常退出时清理 Goal001 owned namespace。抓取 TAP pcap 的原版复现实验因采集开销没有重现错误，该 pcap **只证明成功流量**，不能充作失败包证据。失败证据以上述无 pcap 的 trace 和客户端 peer 为准。
+
+补丁改变 reverse session 的 lookup 位置，并在接收后端报文的接口启用输入 feature；生命周期仍由 VPP 原有 CNAT session 机制管理。独立加载和关闭即可回退到发行版插件。由于未改常驻插件，此处不能声称常驻双 worker 已修好；补丁也只做了有限功能回归，不是并发正确性的形式证明。

@@ -35,6 +35,10 @@ cleanup() {
   if [[ "$original_stopped" == true ]]; then
     scripts/goal001/start-vpp.sh || status=1
   fi
+  if [[ -f "$MARKER" ]]; then
+    # 临时 VPP 意外退出时，恢复原独立实例后仍只清理本实验拥有的 namespace。
+    scripts/goal001/cleanup-topology.sh || status=1
+  fi
   [[ $(ip -4 route show default) == "$before_route" ]] || { printf 'host default route 发生变化\n' >&2; status=1; }
   [[ $(ip -br addr show "$management_if") == "$before_management" ]] || { printf '%s 地址/状态发生变化\n' "$management_if" >&2; status=1; }
   [[ $(ip netns list) == "$before_namespaces" ]] || { printf 'host namespace 列表发生变化\n' >&2; status=1; }
@@ -47,6 +51,10 @@ trap cleanup EXIT
 
 install -d -m 0700 /run/vpp-goal004-multiworker
 cp deploy/vpp/startup-goal001.conf /run/vpp-goal004-multiworker/startup-goal001.conf
+if [[ -n "${GOAL006_PLUGIN_PATH:-}" ]]; then
+  [[ -f "$GOAL006_PLUGIN_PATH/cnat_plugin.so" ]] || die 'Goal006 隔离 CNAT plugin 不存在'
+  sed -i "/^plugins {/a\\  path $GOAL006_PLUGIN_PATH" /run/vpp-goal004-multiworker/startup-goal001.conf
+fi
 printf '\ncpu { workers 2 }\n' >> /run/vpp-goal004-multiworker/startup-goal001.conf
 
 scripts/goal001/stop-vpp.sh
@@ -63,5 +71,27 @@ require_vpp
 [[ $(thread_count) -eq 3 ]] || die 'VPP 未启动两个 worker'
 vppctl -s "$CLI_SOCKET" show threads
 
-GOAL002_RX_WORKER=0 GOAL002_SERVER_RX_WORKER=1 GOAL002_SERVER_REPLY_DELAY=0.2 scripts/goal002/test-service.sh
+GOAL002_RX_WORKER=${GOAL004_CLIENT_RX_WORKER:-0} \
+GOAL002_SERVER_RX_WORKER=${GOAL004_SERVER_RX_WORKER:-1} \
+GOAL002_SERVER_REPLY_DELAY=${GOAL004_REPLY_DELAY:-0.2} \
+  scripts/goal002/test-service.sh
+if [[ "${GOAL006_RESTART_REGRESSION:-false}" == true ]]; then
+  scripts/goal001/stop-vpp.sh
+  temporary_started=false
+  vpp -c /run/vpp-goal004-multiworker/startup-goal001.conf
+  temporary_started=true
+  for attempt in {1..200}; do
+    if [[ -S "$CLI_SOCKET" && -S "$API_SOCKET" ]] && vppctl -s "$CLI_SOCKET" show version >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.1
+  done
+  require_vpp
+  [[ $(thread_count) -eq 3 ]] || die 'VPP restart 后 worker 数错误'
+  GOAL002_RX_WORKER=${GOAL004_CLIENT_RX_WORKER:-0} \
+  GOAL002_SERVER_RX_WORKER=${GOAL004_SERVER_RX_WORKER:-1} \
+  GOAL002_SERVER_REPLY_DELAY=${GOAL004_REPLY_DELAY:-0.2} \
+    scripts/goal002/test-service.sh
+  printf 'Goal006 patched VPP restart 与 GoVPP 重新连接成功\n'
+fi
 printf '两个 worker 下 Goal 002 Service E2E 成功\n'
