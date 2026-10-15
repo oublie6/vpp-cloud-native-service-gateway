@@ -53,7 +53,9 @@ GOTOOLCHAIN=go1.26.9 go test ./...
 GOAL006_CONTROLLER_RESTART=true scripts/goal004/test-physical-pod-service.sh
 ```
 
-Go 全包测试通过。真实 v1.36.4 双 Ready 节点测试中，Controller watch/list Service/EndpointSlice 并写入 VPP CNAT；美国节点远端 Pod `10.244.0.200`。初始 TCP VIP 40 flows：本地15、远端25；重启 Controller 后新 20 flows：本地9、远端11，重启日志 `services=1 changed=0`，VPP translation 未丢；将远端 EndpointSlice 改为 false 后 10 flows 全走本地，恢复后 40 flows 本地22、远端18。VPP API dump、trace、Stats 与路由/邻居有输出，最后删除本实验 Service/namespace、CNAT、/32 route 并核对宿主默认路由和管理 NIC，cleanup status=0。日志为 `k8s-upgrade-go-test-1269.log`、`k8s136-real-api-pod-service.log`、`k8s136-real-api-restart.log`。这里重启的是 Controller，**没有中断 API server 网络连接来单独测 watch reconnect**；fake-client/reconciler 单元测试覆盖了重连路径，真实服务器网络中断尚未专项注入。
+Go 全包测试通过。真实 v1.36.4 双 Ready 节点测试中，Controller watch/list Service/EndpointSlice 并写入 VPP CNAT；美国节点远端 Pod `10.244.0.200`。初始 TCP VIP 40 flows：本地15、远端25；重启 Controller 后新 20 flows：本地9、远端11，重启日志 `services=1 changed=0`，VPP translation 未丢；将远端 EndpointSlice 改为 false 后 10 flows 全走本地，恢复后 40 flows 本地22、远端18。VPP API dump、trace、Stats 与路由/邻居有输出，最后删除本实验 Service/namespace、CNAT、/32 route 并核对宿主默认路由和管理 NIC，cleanup status=0。日志为 `k8s-upgrade-go-test-1269.log`、`k8s136-real-api-pod-service.log`、`k8s136-real-api-restart.log`。
+
+为补充真实 watch 重连，在已授权的隔离 Pod Service 测试里以 `GOAL006_WATCH_DROP=true GOAL006_CONTROLLER_RESTART=true scripts/goal004/test-physical-pod-service.sh` 运行。`scripts/goal006/api-watch-proxy.py` 只监听本机 `127.0.0.1:18086`，TLS 字节流转发到原 API server；仅实验 Controller 使用 root-only 0600 临时 kubeconfig，kubectl 仍直连。代理通过 SIGUSR1 关闭当前 API 连接并拒绝新连接，期间将实验 EndpointSlice 的远端 ready 改为 false：VPP CNAT 仍保留旧 backend，说明 Controller 没收到更新。SIGUSR2 恢复后，CNAT 自动删除远端 backend，10 条新 TCP flow 全到本地；ready 恢复后 20 条新 flow 再次覆盖本地和远端。随后 Controller 重启，20 条 flow 仍覆盖两端；常规 readiness 下线 10 条全本地，恢复 40 条仍覆盖两端。最终代码连续两次测试 exit 0、cleanup status=0、两节点仍 Ready；第二次对应初始 40 条本地19/远端21，watch 恢复后 20 条本地9/远端11，Controller 重启后 20 条本地7/远端13，最终 40 条本地17/远端23。日志 `/root/goal006-evidence/k8s136-real-watch-drop.log`、`k8s136-real-watch-drop-final.log`。这验证了**客户端 watch 连接断开后重新收敛**；没有重启或修改真实 API server。
 
 ## Stage D：CI、受影响回归与清理
 

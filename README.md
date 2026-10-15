@@ -453,7 +453,7 @@ Goal 001 文档：`docs/goals/001-vpp-govpp-environment-baseline.md`；实际运
 
 ## Goal006：遗留稳定性问题收尾（2026-10-15）
 
-[正式 Goal006](docs/goals/006-cnat-multiworker-hardening-and-release.md)：发行版 CNAT 的双 worker 零延迟 UDP 首包错误已复现；固定 VPP v24.10 的隔离补丁在分离 RX 下通过每轮 100 flow、三轮首回包验证和重启复验。Goal005 插件失败回滚、Kubernetes v1.36.4 SDK/真实 API 与 Pod TCP、最小 CI 和受影响回归也已实现。**常驻 VPP 仍使用发行版 CNAT**；切换系统安装插件需要单独授权，ChatGPT 最终验收仍待进行。完整证据：[results/goal006](results/goal006/README.md)。
+[正式 Goal006](docs/goals/006-cnat-multiworker-hardening-and-release.md)：发行版 CNAT 的双 worker 零延迟 UDP 首包错误已复现；固定 VPP v24.10 的隔离补丁在分离 RX 下通过每轮 100 flow、三轮首回包验证和重启复验。Goal005 插件失败回滚、Kubernetes v1.36.4 SDK/真实 API、watch 断连恢复与跨节点 Pod TCP、最小 CI 和受影响回归也已实现。**常驻 VPP 仍使用发行版 CNAT**；切换系统安装插件需要单独授权，ChatGPT 最终验收仍待进行。完整证据：[results/goal006](results/goal006/README.md)。
 
 ---
 
