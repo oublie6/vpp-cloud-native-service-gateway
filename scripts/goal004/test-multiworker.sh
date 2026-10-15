@@ -50,11 +50,8 @@ cleanup() {
 trap cleanup EXIT
 
 install -d -m 0700 /run/vpp-goal004-multiworker
-cp deploy/vpp/startup-goal001.conf /run/vpp-goal004-multiworker/startup-goal001.conf
-if [[ -n "${GOAL006_PLUGIN_PATH:-}" ]]; then
-  [[ -f "$GOAL006_PLUGIN_PATH/cnat_plugin.so" ]] || die 'Goal006 隔离 CNAT plugin 不存在'
-  sed -i "/^plugins {/a\\  path $GOAL006_PLUGIN_PATH" /run/vpp-goal004-multiworker/startup-goal001.conf
-fi
+scripts/goal001/render-startup-config.sh \
+  /run/vpp-goal004-multiworker/startup-goal001.conf "${GOAL006_PLUGIN_PATH:-}"
 printf '\ncpu { workers 2 }\n' >> /run/vpp-goal004-multiworker/startup-goal001.conf
 
 scripts/goal001/stop-vpp.sh

@@ -4,6 +4,9 @@ set -euo pipefail
 repo_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 config="$repo_dir/deploy/vpp/startup-goal001.conf"
 runtime=/run/vpp-goal001
+if [[ -e /var/lib/vpp-goal006/active.sha256 ]]; then
+  config=$runtime/startup-goal001.conf
+fi
 
 if (( EUID != 0 )); then
   printf '需要 root 启动 VPP\n' >&2
@@ -27,6 +30,9 @@ if [[ -f "$runtime/vpp.pid" ]]; then
   rm -f -- "$runtime/vpp.pid"
 fi
 install -d -m 0755 "$runtime"
+if [[ "$config" == "$runtime/startup-goal001.conf" ]]; then
+  "$repo_dir/scripts/goal001/render-startup-config.sh" "$config"
+fi
 for socket in "$runtime/cli.sock" "$runtime/api.sock"; do
   if [[ -S "$socket" ]]; then
     rm -f -- "$socket"

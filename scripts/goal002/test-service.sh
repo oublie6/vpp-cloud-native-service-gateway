@@ -102,7 +102,11 @@ go run ./cmd/goal002-fib setup
 ip -n "$CLIENT_NS" route replace default via "$CLIENT_GW" dev "$CLIENT_HOST_IF"
 ip -n "$SERVER_NS" route replace default via "$SERVER_GW" dev "$SERVER_HOST_IF"
 ip -n "$SERVER_NS" addr add 10.10.2.3/24 dev "$SERVER_HOST_IF"
-if [[ "${GOAL006_ENABLE_INPUT_FEATURE:-false}" == true ]]; then
+enable_input_feature=${GOAL006_ENABLE_INPUT_FEATURE:-false}
+if [[ -f /var/lib/vpp-goal006/active.sha256 ]]; then
+  enable_input_feature=true
+fi
+if [[ "$enable_input_feature" == true ]]; then
   go run ./cmd/goal006-feature enable
   input_feature_enabled=true
   vppctl -s "$CLI_SOCKET" show interface features tap102 | grep -F 'cnat-input-ip4'
