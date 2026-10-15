@@ -1,6 +1,6 @@
 # Goal 004 实际运行证据
 
-状态：Codex 已在单机双逻辑节点软件拓扑上实现并验证；ChatGPT 学习 / 工程验收待验收。**本实验不是两台物理主机或真实 NIC 的性能测试。**
+状态：Codex 已完成单机双逻辑节点实验，并在现有两台 Ready Kubernetes 节点上完成真实远端 Pod TCP 补充验证；ChatGPT 学习 / 工程验收待验收。**这些都是软件路径功能证据，不是硬件 NIC 性能测试。**
 
 ## 环境、版本和 ownership
 
@@ -209,3 +209,51 @@ join 后 Pod sandbox 曾因原 `/etc/containerd/config.toml` 只有 `SystemdCgro
 本方案只恢复了现有两节点的实验可达性；原 WireGuard UDP 故障未定位、未修复。`/etc/goal004-worker-tcp.env`、SSH 凭据、kubeadm bootstrap 文件保留在主机 root-only 路径，未写入仓库；持续运行依赖远端 sshd 的 `PermitTunnel`、本机 systemd 服务及 TCP/22。Kubernetes v1.37 将取消对 containerd 1.7 缺失 `RuntimeConfig` CRI 方法的 cgroup driver 回退；本次仅验证 v1.36.4。
 
 脚本收尾复验中发现 `ip route show` 对 `wg0` 基线路由附带尾部空格，使最初的 `ExecStopPost` 严格字符串比较误报；虽主服务自动恢复，仍将比较改为逐字段验证。再次 `systemctl restart goal004-worker-tcp-link` 后 `Result=success`、`ExecStopPost status=0/0`、Node `/32` 经 `tun3`、私网 API `/readyz` 为 HTTP 200。
+
+### VPP CNAT -> 美国节点真实 Pod TCP 组合复验（2026-10-15 UTC）
+
+从干净 VPP 基线两次运行 `scripts/goal004/test-physical-pod-service.sh`，均退出 0。脚本确认本机 `hk-worker`、美国 `ser730417996259` 都为 Ready，临时创建 `goal004-pod-backend/us-backend` Pod；第二次 Pod IP 为 `10.244.0.23`，运行 Busybox `httpd :18080`，响应体为自身 Pod IP。本机到该 Pod HTTP 直连成功。环境为本机 Ubuntu 20.04 / kernel 5.15.0-139、美国 Ubuntu 22.04 / kernel 5.15.0-191，Kubernetes v1.36.4，VPP 24.10-release、GoVPP v0.13.0、Go 1.24.13。VPP 仍为单 `vpp_main`、TAP I/O、DPDK 禁用。
+
+```text
+g001-client 10.10.1.2 -> tap101 / VPP 10.10.1.1
+  -> 隔离 VIP 198.19.0.20:18080 / CNAT
+  -> tap102 / VPP 10.10.2.1 -> g001-server 10.10.2.2
+       | 本地 TCP backend 10.10.2.2:18080
+       | g004podn 10.200.4.2/30 <veth> g004podh 10.200.4.1/30
+       -> 本机 Linux host -> tun3 SSH/TCP -> 美国 Node/Cilium
+       -> 真实 Pod 10.244.0.23:18080
+```
+
+VPP `/32` 路由经 `goal004-route -prefix 10.244.0.23/32 add` 用 GoVPP Binary API 写入；`g001-server` namespace 的 Pod `/32` 路由经 host veth，双端仅为 client 加临时 `/32` 回程 route。宿主默认 route、管理 NIC 与全局 sysctl 未改。`g001-client -> PodIP` ping 3/3，RTT 158～172 ms；这与 CNAT VIP 测试分别验证底层可达性和 Service 转换。手工 EndpointSlice 同时列出本地 `10.10.2.2:18080`、远端真实 Pod IP；本机 Go controller 从 Kubernetes API watch 到它，经 GoVPP 写入一条 TCP CNAT translation。
+
+第二次干净复跑的 VIP TCP 结果（每条使用不同 client 源端口；客户端同时核对 payload backend 身份和 reply peer 为 VIP）：
+
+| EndpointSlice 状态 | 新建 TCP flow | 本地 | 美国 Pod |
+| --- | ---: | ---: | ---: |
+| 两端 ready | 40 | 14 | 26 |
+| 美国 Pod ready=false | 10 | 10 | 0 |
+| 美国 Pod 恢复 ready=true | 40 | 16 | 24 |
+
+第一次复跑也通过：40 条为本地/远端 22/18，缩容 10 条为 10/0，恢复 40 条为 17/23。第二次 VPP Binary API dump 为 `interfaces=3 IPv4 routes=17 CNAT translations=1 sessions=50`，Stats API `tap101 rx/tx=212/204`、`tap102 rx/tx=213/205`，两接口 RX/TX error 均为 0。`show ip fib 10.244.0.23/32` 显示 `API refs:1`、`oper-flags:resolved`、`10.10.2.2 tap102`，forwarding `dpo-load-balance` 的 bucket 为 `ipv4 via 10.10.2.2 tap102`，实际 L2 rewrite 为 `02feaf0dcc4602fe97723bf50800`。`show ip neighbors` 显示下一跳 `10.10.2.2` 在 `tap102` 的动态 MAC `02:fe:af:0d:cc:46`，无需直接 ARP 最终 Pod IP。
+
+真实 VPP trace 捕获同一 TCP flow `10.10.1.2:52000 -> 198.19.0.20:18080`：
+
+```text
+正向：virtio-input -> ethernet-input -> ip4-input -> ip4-lookup
+      -> ip4-cnat-tx created session:
+         10.10.1.2;52000 -> 198.19.0.20;18080
+         => 10.10.1.2;52000 -> 10.244.0.23;18080
+      -> ip4-load-balance -> ip4-rewrite (via 10.10.2.2 tap102)
+      -> tap102-output -> tap102-tx
+反向：virtio-input -> ethernet-input -> ip4-input -> ip4-lookup
+      -> ip4-cnat-tx found session:
+         10.244.0.23;18080 -> 10.10.1.2;52000
+         => 198.19.0.20;18080 -> 10.10.1.2;52000
+      -> ip4-rewrite -> tap101-output -> tap101-tx
+```
+
+`show threads` 只有 `vpp_main`。第二次 `show runtime` 的累计值：`ip4-cnat-tx Calls=2049 Vectors=2243 Vectors/Call=1.09`、`ip4-rewrite 2080/2271/1.09`、`virtio-input 799203781/2385/0.00`；低流量和累积轮询计数不构成性能结论。`clear errors` 后的 `show errors` 有 2 个 `null-node blackholed packets`；当前 trace 没有足够证据确定具体产生包，故不归因于成功 TCP flow。完整临时 trace 留在主机 root-only 恢复目录，不把大日志或凭据提交仓库。
+
+排障保留：第一次原型执行时小写 HTTP proxy 环境变量使 kubectl 访问私网 API TLS 超时；明确 unset 大小写 proxy 后恢复。第二次临时 agent binary 放在 `/run` 无法执行，改为 root-only `/tmp`。第三次 Busybox `nc -l` 快速重复建连偶发拒绝连接，改为持久 `httpd` 后两次正式脚本均通过。早期清理工具只识别固定逻辑远端 backend，遇到动态 Pod session 时拒绝 purge；现仅在显式给出 `-pod-backend`、地址位于远端 PodCIDR 且 Goal 004 ownership marker 存在，并确认没有其他 translation/session 时允许清理。没有覆盖未知 VPP 路由或 session。
+
+脚本退出时删除 Pod/Namespace、controller、CNAT translation/session、GoVPP Pod `/32` route、两端临时 client `/32` route、host veth、Goal 001 TAP/namespace；第二次输出 `cleanup status=0`、`interfaces=1 IPv4 routes=5 CNAT translations=0 sessions=0`，本机 namespace 为空、`g004podh` 和实验 route/marker 均消失，远端实验 route/Namespace 消失；本机默认 route `via 10.0.138.1 dev eth0`、美国默认 route `via 10.0.72.1 dev eth0`、两端管理接口地址与采集前相同。持久 SSH/TCP 节点链路和两节点 Ready 状态保持。复现需 root-only `/etc/goal004-worker-tcp.env` 及其 SSH helper/known_hosts，且已有 TCP 链路服务运行；它们均不进入仓库。原 WireGuard 公网 UDP 故障仍未修复，Cilium VXLAN UDP 在 SSH/TCP TUN 内部传送。

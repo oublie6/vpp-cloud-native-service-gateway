@@ -4,7 +4,7 @@
 
 ## 背景与学习重点
 
-Goal 003 已证实 Kubernetes Service/EndpointSlice 经 informer、desired store、GoVPP 驱动 VPP CNAT，并通过 TCP/UDP packet E2E。Goal 004 验证一个本地 backend 与一个跨路由边界的远端 backend 同时存在时的正反向路径、失效收敛和可观测性。原 Goal 004 实施时只有一台普通云服务器，因此既有“双节点”证据是网络命名空间隔离的**两个逻辑节点**；不能表述成两台真实主机、真实 NIC 或 line-rate。2026-10-14 另用临时 SSH TUN 在现有第二台物理主机上验证了补充数据路径；Kubernetes worker 仍未 Ready，详见[结果](../../results/goal004/README.md)。
+Goal 003 已证实 Kubernetes Service/EndpointSlice 经 informer、desired store、GoVPP 驱动 VPP CNAT，并通过 TCP/UDP packet E2E。Goal 004 验证一个本地 backend 与一个跨路由边界的远端 backend 同时存在时的正反向路径、失效收敛和可观测性。原 Goal 004 实施时只有一台普通云服务器，因此既有“双节点”证据是网络命名空间隔离的**两个逻辑节点**；不能表述成两台真实主机、真实 NIC 或 line-rate。随后在现有第二台云主机上恢复两个 Kubernetes Node 为 Ready，并验证 VPP CNAT 到真实远端 Pod 的 TCP 路径，详见[结果](../../results/goal004/README.md)。
 
 ## 固定环境和边界
 
@@ -85,7 +85,9 @@ controller 新增 loopback `/metrics`、`/status`，反映 attempts/failures/cha
 
 针对 VPP/DPDK 实验的疑问，已在本机 VPP 仅有 `local0`、DPDK plugin 禁用且 `eth0` 使用 Linux `virtio_net` 驱动的状态下，短暂停止 VPP 并复测 WireGuard；美国节点回包仍未到达本机网卡。VPP 已重启且 GoVPP API 检查成功。该对照排除当前 VPP 进程造成故障，公网 UDP 丢失点仍未定位。
 
-用户选择 TCP 替代公网 UDP 后，以 SSH/TCP 22 + point-to-point TUN 恢复现有 Node IP 的 `/32` 双向路由，并由 `goal004-worker-tcp-link.service` 保持链路。2026-10-15 两节点 `hk-worker`、`ser730417996259` 均真实为 `Ready`，本机 kubelet/containerd 及 Cilium、Envoy、kube-proxy 均运行。可重复脚本 `scripts/goal004/test-physical-pod-tcp.sh` 从干净 namespace 创建两节点 Pod，香港 `10.244.1.31` 到美国 `10.244.0.11` ping 2/2，TCP `:18080` 返回 `goal004-tcp-ok`，随后删除 namespace，退出码 0。修复过程中的 cgroup v1、`getsubids`、containerd CRI runtime 配置及 host state/cleanup 详见[真实证据](../../results/goal004/README.md)。原 WireGuard UDP 仍故障；Cilium VXLAN 的 UDP 是 TCP TUN 内层封装，因此“改用 TCP”指公网节点链路，不代表集群内协议没有 UDP。此实测只证明 Pod 间 IPv4/TCP 和既有 Goal 004 物理主机补充路径，尚未把 VPP CNAT backend 改成 Pod IP 做组合验收；ChatGPT 最终验收仍待确认。
+用户选择 TCP 替代公网 UDP 后，以 SSH/TCP 22 + point-to-point TUN 恢复现有 Node IP 的 `/32` 双向路由，并由 `goal004-worker-tcp-link.service` 保持链路。2026-10-15 两节点 `hk-worker`、`ser730417996259` 均真实为 `Ready`，本机 kubelet/containerd 及 Cilium、Envoy、kube-proxy 均运行。可重复脚本 `scripts/goal004/test-physical-pod-tcp.sh` 从干净 namespace 创建两节点 Pod，香港 `10.244.1.31` 到美国 `10.244.0.11` ping 2/2，TCP `:18080` 返回 `goal004-tcp-ok`，随后删除 namespace，退出码 0。修复过程中的 cgroup v1、`getsubids`、containerd CRI runtime 配置及 host state/cleanup 详见[真实证据](../../results/goal004/README.md)。原 WireGuard UDP 仍故障；Cilium VXLAN 的 UDP 是 TCP TUN 内层封装，因此“改用 TCP”指公网节点链路，不代表集群内协议没有 UDP。
+
+新增 `scripts/goal004/test-physical-pod-service.sh` 与 `pod_service_traffic.py`，在同一 Goal 001 TAP 入口上创建隔离 VIP、本地 namespace backend 和美国 Kubernetes Pod backend。`goal004-route -prefix` 经 GoVPP 写入当次 Pod `/32`；controller 从真实 Service/EndpointSlice 写入 CNAT。干净环境复跑两次均退出 0：第二次 40 条新 TCP flow 本地/远端 14/26，远端 endpoint `ready=false` 后 10 条全到本地，恢复后 40 条本地/远端 16/24；客户端验证 reply peer 为 VIP。VPP trace 包含远端 Pod 正向 session、反向 VIP 改写和 tap102/tap101 输出；cleanup 删除 Pod/namespace、CNAT、API route、TAP/veth/namespace，并核查两端默认路由和管理接口。实际证据见[结果](../../results/goal004/README.md)。ChatGPT 最终验收仍待确认。
 
 ## ChatGPT 学习 / 工程验收
 

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"time"
 
@@ -16,31 +18,39 @@ import (
 )
 
 const (
-	apiSocket = "/run/vpp-goal001/api.sock"
-	marker    = "/run/vpp-goal001/goal004-owned"
-	prefix    = "10.10.4.2/32"
-	nextHop   = "10.10.2.2"
-	iface     = "tap102"
+	apiSocket     = "/run/vpp-goal001/api.sock"
+	marker        = "/run/vpp-goal001/goal004-owned"
+	defaultPrefix = "10.10.4.2/32"
+	nextHop       = "10.10.2.2"
+	iface         = "tap102"
 )
 
 func main() {
-	if len(os.Args) != 2 || (os.Args[1] != "add" && os.Args[1] != "del" && os.Args[1] != "inspect") {
-		fmt.Fprintln(os.Stderr, "用法: goal004-route add|del|inspect")
+	requestedPrefix := flag.String("prefix", defaultPrefix, "Goal 004 backend /32；默认逻辑远端，或当前美国节点 Pod CIDR")
+	flag.Parse()
+	if flag.NArg() != 1 || (flag.Arg(0) != "add" && flag.Arg(0) != "del" && flag.Arg(0) != "inspect") {
+		fmt.Fprintln(os.Stderr, "用法: goal004-route [-prefix BACKEND/32] add|del|inspect")
 		os.Exit(2)
 	}
-	if os.Args[1] != "inspect" {
+	prefix, err := netip.ParsePrefix(*requestedPrefix)
+	if err != nil || !prefix.Addr().Is4() || prefix.Bits() != 32 ||
+		(prefix.String() != defaultPrefix && !netip.MustParsePrefix("10.244.0.0/24").Contains(prefix.Addr())) {
+		fmt.Fprintf(os.Stderr, "拒绝非 Goal 004 backend /32: %q\n", *requestedPrefix)
+		os.Exit(2)
+	}
+	if flag.Arg(0) != "inspect" {
 		if _, err := os.Stat(marker); err != nil {
 			fmt.Fprintf(os.Stderr, "Goal 004 ownership marker %s 不可用: %v\n", marker, err)
 			os.Exit(1)
 		}
 	}
-	if err := run(os.Args[1]); err != nil {
+	if err := run(flag.Arg(0), prefix.String(), prefix.Addr().String()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(action string) error {
+func run(action, prefix, backendIP string) error {
 	conn, err := govpp.Connect(apiSocket)
 	if err != nil {
 		return fmt.Errorf("连接 VPP Binary API: %w", err)
@@ -64,7 +74,7 @@ func run(action string) error {
 	if err != nil {
 		return err
 	}
-	existing, err := findRoute(ctx, ipClient)
+	existing, err := findRoute(ctx, ipClient, prefix)
 	if err != nil {
 		return err
 	}
@@ -72,7 +82,7 @@ func run(action string) error {
 		if action != "add" || !dropOnly(existing) {
 			return fmt.Errorf("%s 已有非 Goal 004 路由，拒绝修改: %+v", prefix, existing.Paths)
 		}
-		managed, err := hasManagedBackend(ctx, cnat.NewServiceClient(conn))
+		managed, err := hasManagedBackend(ctx, cnat.NewServiceClient(conn), backendIP)
 		if err != nil {
 			return err
 		}
@@ -83,18 +93,18 @@ func run(action string) error {
 	switch action {
 	case "add":
 		if existing == nil || !ownedPath(existing, ifIndex) {
-			if err := updateRoute(ctx, ipClient, ifIndex, true); err != nil {
+			if err := updateRoute(ctx, ipClient, ifIndex, prefix, true); err != nil {
 				return err
 			}
 		}
 	case "del":
 		if existing != nil {
-			if err := updateRoute(ctx, ipClient, ifIndex, false); err != nil {
+			if err := updateRoute(ctx, ipClient, ifIndex, prefix, false); err != nil {
 				return err
 			}
 		}
 	}
-	observed, err := findRoute(ctx, ipClient)
+	observed, err := findRoute(ctx, ipClient, prefix)
 	if err != nil {
 		return fmt.Errorf("操作后复查 FIB: %w", err)
 	}
@@ -132,7 +142,7 @@ func findInterface(ctx context.Context, client interfaces.RPCService) (uint32, e
 	}
 }
 
-func findRoute(ctx context.Context, client ip.RPCService) (*ip.IPRoute, error) {
+func findRoute(ctx context.Context, client ip.RPCService, prefix string) (*ip.IPRoute, error) {
 	stream, err := client.IPRouteDump(ctx, &ip.IPRouteDump{Table: ip.IPTable{TableID: 0}})
 	if err != nil {
 		return nil, fmt.Errorf("IPRouteDump: %w", err)
@@ -164,7 +174,7 @@ func dropOnly(route *ip.IPRoute) bool {
 		route.Paths[0].SwIfIndex == ^uint32(0)
 }
 
-func hasManagedBackend(ctx context.Context, client cnat.RPCService) (bool, error) {
+func hasManagedBackend(ctx context.Context, client cnat.RPCService, backendIP string) (bool, error) {
 	stream, err := client.CnatTranslationDump(ctx, &cnat.CnatTranslationDump{})
 	if err != nil {
 		return false, fmt.Errorf("确认 CNAT backend: %w", err)
@@ -183,14 +193,14 @@ func hasManagedBackend(ctx context.Context, client cnat.RPCService) (bool, error
 			continue
 		}
 		for _, path := range translation.Paths {
-			if path.DstEp.Addr.String() == "10.10.4.2" && path.DstEp.Port == 18080 {
+			if path.DstEp.Addr.String() == backendIP && path.DstEp.Port == 18080 {
 				return true, nil
 			}
 		}
 	}
 }
 
-func updateRoute(ctx context.Context, client ip.RPCService, ifIndex uint32, add bool) error {
+func updateRoute(ctx context.Context, client ip.RPCService, ifIndex uint32, prefix string, add bool) error {
 	destination, err := ip_types.ParsePrefix(prefix)
 	if err != nil {
 		return err

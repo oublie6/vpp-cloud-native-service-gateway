@@ -6,7 +6,7 @@ Kubernetes Service 和 EndpointSlice 由 `internal/kube` 的 informer 收集。`
 
 ## 数据面
 
-Goal 001 的独立 VPP 实例通过 Linux TAP 连通两个 namespace。Goal 002～004 在同一 VPP 实例上验证 FIB/DPO/adjacency、CNAT VIP、local/remote backend；remote 是单机隔离网络命名空间中的逻辑节点。Goal 005 的 `goal005-observe` 挂在 `ip4-unicast` feature arc，读取 IPv4 src/dst、RX interface、next index 并增加 info counter，buffer 原样交给 VPP 后继 node。它不参与 CNAT 选择，不改写 packet，也不接管 buffer 生命周期。
+Goal 001 的独立 VPP 实例通过 Linux TAP 连通两个 namespace。Goal 002～004 在同一 VPP 实例上验证 FIB/DPO/adjacency、CNAT VIP、local/remote backend；原实验的 remote 是单机隔离网络命名空间中的逻辑节点。补充实验经 SSH/TCP TUN 到现有美国 Kubernetes 节点，并以真实 Pod IP 作为远端 CNAT backend。Goal 005 的 `goal005-observe` 挂在 `ip4-unicast` feature arc，读取 IPv4 src/dst、RX interface、next index 并增加 info counter，buffer 原样交给 VPP 后继 node。它不参与 CNAT 选择，不改写 packet，也不接管 buffer 生命周期。
 
 ```text
 Kubernetes Service/EndpointSlice -> informer -> desired state -> reconciler
@@ -21,4 +21,4 @@ Goal 005 自定义 API 仅控制单接口 feature 开关；正式 Service 控制
 
 ## 约束
 
-隔离 VIP 不与 kube-proxy 的普通 ClusterIP 争用。主要验证基于 VPP 24.10、TAP/Linux kernel；已有受控双 worker 功能复验和经临时 SSH TUN 的真实跨主机 Service packet E2E，但不作真实 NIC benchmark 结论。现有 Kubernetes worker 仍为 `NotReady`，跨主机 backend 是远端 host loopback，不是两个 Ready 节点上的 Pod E2E。详细运行结果见 `results/goal001`～`results/goal005`。
+隔离 VIP 不与 kube-proxy 的普通 ClusterIP 争用。主要验证基于 VPP 24.10、TAP/Linux kernel；已有受控双 worker 功能复验，以及经 SSH/TCP TUN 的真实跨主机 Service packet E2E。2026-10-15 两个 Kubernetes 节点均为 `Ready`，补充实验已验证 VPP CNAT 到美国节点真实 Pod 的 TCP 正反向路径和 EndpointSlice readiness 收敛。公网 WireGuard UDP 仍故障；Cilium VXLAN UDP 位于 SSH/TCP TUN 内部。没有真实 NIC benchmark 结论。详细运行结果见 `results/goal001`～`results/goal005`。

@@ -439,7 +439,7 @@ Goal 002 计划：[Goal 文档](docs/goals/002-govpp-control-plane-cnat-service.
 
 Goal 003 的 Kubernetes Service/EndpointSlice informer、desired-state reconciler、GoVPP CNAT、TCP/UDP packet E2E 与 controller/VPP/API server 重启恢复已在隔离 kind 集群和 VPP 24.10 上验证；ChatGPT 学习/工程验收待确认。计划：[Goal 文档](docs/goals/003-kubernetes-service-reconciler.md)；运行证据：[results/goal003](results/goal003/README.md)。
 
-Goal 004 的本地/远端 backend、链路故障与 EndpointSlice scale、VPP 重启恢复、controller 指标和有界软件测量已在单机双逻辑节点拓扑验证。另以 SSH/TCP TUN 在真实第二台主机验证了 TCP/UDP Service packet、trace 和 readiness 故障恢复；2026-10-15 两个现有 Kubernetes 节点均为 `Ready`，跨节点 Pod IPv4/TCP E2E 通过并完成临时 namespace 清理。公网 WireGuard UDP 仍故障，Cilium VXLAN UDP 位于 SSH/TCP 隧道内部；目前还没有将 VPP CNAT backend 设置为真实 Pod IP 做组合验收。以上均不是硬件性能证据。计划：[Goal 文档](docs/goals/004-two-node-service-dataplane.md)；运行证据：[results/goal004](results/goal004/README.md)。
+Goal 004 的本地/远端 backend、链路故障与 EndpointSlice scale、VPP 重启恢复、controller 指标和有界软件测量已在单机双逻辑节点拓扑验证。另以 SSH/TCP TUN 在真实第二台主机验证了 TCP/UDP Service packet、trace 和 readiness 故障恢复；2026-10-15 两个现有 Kubernetes 节点均为 `Ready`，跨节点 Pod IPv4/TCP E2E 通过。补充实验还将 VPP CNAT 的远端 backend 设置为真实美国节点 Pod IP，经隔离 VIP 完成 TCP 正反向路径、EndpointSlice readiness 下线和恢复，以及自动 cleanup。公网 WireGuard UDP 仍故障，Cilium VXLAN UDP 位于 SSH/TCP 隧道内部。以上均不是硬件性能证据。计划：[Goal 文档](docs/goals/004-two-node-service-dataplane.md)；运行证据：[results/goal004](results/goal004/README.md)。
 
 Goal 005 的 `ip4-unicast` 观测插件、自定义 Binary API/GoVPP 调用、TAP packet trace、info counter 和卸载 cleanup 已在 VPP 24.10 实测。计划：[Goal 文档](docs/goals/005-small-vpp-plugin-finalization.md)；运行证据：[results/goal005](results/goal005/README.md)。项目总览见[架构](docs/architecture.md)、[排障索引](docs/troubleshooting.md)、[软件测量边界](docs/benchmark.md)。五个 Goal 的 Codex 实现已完成；Goal 002～005 的 ChatGPT 学习 / 工程验收仍待确认。
 
