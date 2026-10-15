@@ -32,3 +32,13 @@ GOAL006_PLUGIN_PATH=/tmp/goal006-cnat.<本次构建>/build/vpp_plugins \
 排障过程：首次重启回归在重复设置已正确的 TAP RX placement 时触发 VPP worker barrier abort；core 栈位于 `set_hw_interface_rx_placement`，而非 CNAT。脚本现先查询 placement，只在不同值时更改，并在异常退出时清理 Goal001 owned namespace。抓取 TAP pcap 的原版复现实验因采集开销没有重现错误，该 pcap **只证明成功流量**，不能充作失败包证据。失败证据以上述无 pcap 的 trace 和客户端 peer 为准。
 
 补丁改变 reverse session 的 lookup 位置，并在接收后端报文的接口启用输入 feature；生命周期仍由 VPP 原有 CNAT session 机制管理。独立加载和关闭即可回退到发行版插件。由于未改常驻插件，此处不能声称常驻双 worker 已修好；补丁也只做了有限功能回归，不是并发正确性的形式证明。
+
+## Stage B：Goal005 插件异常回滚
+
+状态：**已实现并在本机两次完整通过**。`scripts/goal005/test-plugin.sh` 在构建完成后才停原实例，分别跟踪原 VPP 是否已停止、候选插件是否由脚本安装、目标 VPP 是否启动、拓扑是否创建。插件采用唯一临时文件并通过无覆盖 hard link 安装；若目标路径预存同名 `.so`，安装前拒绝覆盖。清理仅删除自身安装的文件和有 ownership marker 的 TAP/namespace，并检查原实例 CLI/API socket、插件缺席、默认路由和管理接口。
+
+```bash
+sudo scripts/goal006/test-plugin-rollback.sh
+```
+
+脚本依次注入 `build`、`install`、`start`、`api-enable`、`traffic` 失败，再跑正常路径。两次运行均显示所有阶段后 VPP process/socket 恢复，Goal005 plugin 不残留，Goal001 TAP/namespace 清除，host route/管理接口和双节点相关服务正常。`build` 失败时原 VPP PID 保持不变；其他注入中原实例重新启动，PID 会变化。正常路径还验证插件 API enable/disable、trace、info counter 和 Goal001 ICMP/UDP；日志是 `plugin-rollback-run.log`、`plugin-rollback-repeat.log` 及 `plugin-rollback/*.log`。失败注入由显式环境变量驱动，正常运行不会触发。
