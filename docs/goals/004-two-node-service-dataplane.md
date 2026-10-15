@@ -85,6 +85,8 @@ controller 新增 loopback `/metrics`、`/status`，反映 attempts/failures/cha
 
 针对 VPP/DPDK 实验的疑问，已在本机 VPP 仅有 `local0`、DPDK plugin 禁用且 `eth0` 使用 Linux `virtio_net` 驱动的状态下，短暂停止 VPP 并复测 WireGuard；美国节点回包仍未到达本机网卡。VPP 已重启且 GoVPP API 检查成功。该对照排除当前 VPP 进程造成故障，公网 UDP 丢失点仍未定位。
 
+用户选择 TCP 替代公网 UDP 后，以 SSH/TCP 22 + point-to-point TUN 恢复现有 Node IP 的 `/32` 双向路由，并由 `goal004-worker-tcp-link.service` 保持链路。2026-10-15 两节点 `hk-worker`、`ser730417996259` 均真实为 `Ready`，本机 kubelet/containerd 及 Cilium、Envoy、kube-proxy 均运行。可重复脚本 `scripts/goal004/test-physical-pod-tcp.sh` 从干净 namespace 创建两节点 Pod，香港 `10.244.1.31` 到美国 `10.244.0.11` ping 2/2，TCP `:18080` 返回 `goal004-tcp-ok`，随后删除 namespace，退出码 0。修复过程中的 cgroup v1、`getsubids`、containerd CRI runtime 配置及 host state/cleanup 详见[真实证据](../../results/goal004/README.md)。原 WireGuard UDP 仍故障；Cilium VXLAN 的 UDP 是 TCP TUN 内层封装，因此“改用 TCP”指公网节点链路，不代表集群内协议没有 UDP。此实测只证明 Pod 间 IPv4/TCP 和既有 Goal 004 物理主机补充路径，尚未把 VPP CNAT backend 改成 Pod IP 做组合验收；ChatGPT 最终验收仍待确认。
+
 ## ChatGPT 学习 / 工程验收
 
 待验收。

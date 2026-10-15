@@ -1,0 +1,19 @@
+[Unit]
+Description=Goal 004 worker node link over SSH/TCP
+Wants=network-online.target wg-quick@wg0.service
+After=network-online.target wg-quick@wg0.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+RuntimeDirectory=goal004-worker-tcp
+RuntimeDirectoryMode=0700
+ExecStart=/root/vpp-cloud-native-service-gateway/scripts/goal004/worker-tcp-link.sh run
+ExecStopPost=/root/vpp-cloud-native-service-gateway/scripts/goal004/worker-tcp-link.sh restore-api
+KillMode=mixed
+TimeoutStopSec=30
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
