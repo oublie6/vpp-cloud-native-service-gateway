@@ -1,5 +1,7 @@
 # VPP Cloud-Native Service Gateway
 
+**项目状态：v0.1.0 实验/学习版已封版（2026-10-16）。** Goal001～006 的主要功能与证据已完成审查，Goal006 为限定 IPv4 TAP 场景的附条件验收，**不是生产级网关或已全面验证的 CNAT 修复**。详见 [封版记录](docs/RELEASE-v0.1.0.md)；固定快照见 [release/v0.1.0](https://github.com/oublie6/vpp-cloud-native-service-gateway/tree/release/v0.1.0)（归档分支，非 Git tag）。
+
 一个面向 **云原生容器网络 / 云网络数据面研发** 的 VPP / GoVPP 学习与工程项目。
 
 本仓库承接前序 `dpdk-high-speed-flow-router` 项目：前序项目负责从零理解和实现 RXQ/TXQ、mbuf、RTC、hash/LPM、multi-lcore、RCU/QSBR 等高性能数据面基础；本项目不再重复实现 packet loop，而是转向学习 **成熟工业级 dataplane 如何组织 graph、worker、FIB、adjacency、feature、service/NAT，以及 Go 控制面如何通过 Binary API 驱动 VPP**。
@@ -419,36 +421,20 @@ CNAT / forwarding
 
 ---
 
-## 11. 当前状态
+## 11. 当前状态（2026-10-16 封版）
 
 ~~~text
-DPDK High-Speed Flow Router v0.1      ✅ 已封板
-
-VPP Cloud-Native Service Gateway
-└─ Repository bootstrap              ✅
-   ├─ Goal 001                       ✅ 已完成并通过验收
-   ├─ Goal 002                       🟡 Stage A～C 已实现，待 ChatGPT 最终验收
-   ├─ Goal 003                       🟡 已实现并通过 kind/VPP 实测，待 ChatGPT 最终验收
-   ├─ Goal 004                       🟡 双逻辑节点及真实双 Ready 节点 TCP Pod 实测，待 ChatGPT 最终验收
-   └─ Goal 005                       🟡 小型 VPP plugin 已实现并实测，待 ChatGPT 最终验收
-   └─ Goal 006                       ✅ ChatGPT 附条件通过（IPv4 TAP 场景；非生产 CNAT 修复）
+DPDK High-Speed Flow Router v0.1     ✅ 已封板（独立项目）
+VPP Cloud-Native Service Gateway   ✅ v0.1.0 实验/学习版封版
+  Goal001  ✅ 正式功能验收通过
+  Goal002  ✅ 代码与真实运行证据审查通过
+  Goal003  ✅ 代码与真实运行证据审查通过
+  Goal004  🟡 跨节点功能验证通过；原双 worker UDP 问题由 Goal006 定向修复，保留适用限制
+  Goal005  ✅ 观测插件功能审查通过；异常回滚在 Goal006 加固
+  Goal006  ✅ 附条件验收（独立 VPP IPv4 TAP、显式 input feature）
 ~~~
 
-Goal 002 的 GoVPP FIB、Stats、CNAT TCP/UDP 双 backend 与动态更新已在 VPP 24.10 实机复验；ChatGPT 学习/工程验收待确认。
-
-Goal 002 计划：[Goal 文档](docs/goals/002-govpp-control-plane-cnat-service.md)；运行证据：[results/goal002](results/goal002/README.md)。
-
-Goal 003 的 Kubernetes Service/EndpointSlice informer、desired-state reconciler、GoVPP CNAT、TCP/UDP packet E2E 与 controller/VPP/API server 重启恢复已在隔离 kind 集群和 VPP 24.10 上验证；ChatGPT 学习/工程验收待确认。计划：[Goal 文档](docs/goals/003-kubernetes-service-reconciler.md)；运行证据：[results/goal003](results/goal003/README.md)。
-
-Goal 004 的本地/远端 backend、链路故障与 EndpointSlice scale、VPP 重启恢复、controller 指标和有界软件测量已在单机双逻辑节点拓扑验证。另以 SSH/TCP TUN 在真实第二台主机验证了 TCP/UDP Service packet、trace 和 readiness 故障恢复；2026-10-15 两个现有 Kubernetes 节点均为 `Ready`，跨节点 Pod IPv4/TCP E2E 通过。补充实验还将 VPP CNAT 的远端 backend 设置为真实美国节点 Pod IP，经隔离 VIP 完成 TCP 正反向路径、EndpointSlice readiness 下线和恢复，以及自动 cleanup。公网 WireGuard UDP 仍故障，Cilium VXLAN UDP 位于 SSH/TCP 隧道内部。以上均不是硬件性能证据。计划：[Goal 文档](docs/goals/004-two-node-service-dataplane.md)；运行证据：[results/goal004](results/goal004/README.md)。
-
-Goal 005 的 `ip4-unicast` 观测插件、自定义 Binary API/GoVPP 调用、TAP packet trace、info counter 和卸载 cleanup 已在 VPP 24.10 实测。计划：[Goal 文档](docs/goals/005-small-vpp-plugin-finalization.md)；运行证据：[results/goal005](results/goal005/README.md)。项目总览见[架构](docs/architecture.md)、[排障索引](docs/troubleshooting.md)、[软件测量边界](docs/benchmark.md)。原五个 Goal 的主要实现已完成；2026-10-15 ChatGPT 基于代码和已记录测试证据完成审查：002/003/005 的主要功能通过，004 因双 worker 无延迟 UDP 首包漏逆向改写而附条件通过。正式独立服务器复跑尚未执行。为消除遗留问题，正式设立 [Goal 006](docs/goals/006-cnat-multiworker-hardening-and-release.md)，此处为 2026-10-15 设立时的历史状态；当前已通过附条件审查。
-
-**Goal 001 已通过最终验收：VPP/GoVPP 环境基线、软件接口拓扑、两接口 L3 forwarding、FIB/DPO/adjacency 与真实 packet trace 均已用 VPP 24.10 真实运行证据验证。**
-
-Goal 001 文档：`docs/goals/001-vpp-govpp-environment-baseline.md`；实际运行证据：`results/goal001/README.md`。
-
-具体 Goal 由 ChatGPT 设计并验收，Codex 按 `AGENTS.md` 执行。
+**工程主线封版，不再有待执行的开发 Goal。** 以上不代表 ChatGPT 直接连接测试机独立复跑，不代表生产可用。详细交付、版本、剩余限制及维护规则见 [v0.1.0 封版记录](docs/RELEASE-v0.1.0.md)、[Goal006 最终验收](docs/goals/006-cnat-multiworker-hardening-and-release.md)、[运行证据](results/goal006/README.md)。
 
 
 ## Goal006：遗留稳定性问题收尾（2026-10-15）

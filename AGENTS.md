@@ -531,3 +531,15 @@ Codex **仅被授权**围绕 Goal006 Stage A→D 完成遗留收尾，并可连�
 运行证据放到 results/goal006/README.md；所有 Stage 按真实结果记录 DONE/BLOCKED，未修复不得宣称全部完成。代码完成后由 ChatGPT 再次审查并给出最终验收。不得由 Codex 擅自创建 Goal007。
 
 2026-10-15 执行进度：Goal006 Stage A～D 已由 Codex 实现并本机复验。用户已单独授权 Stage A 的常驻切换：Goal001 独立 VPP 从专用目录加载固定 VPP 24.10 CNAT 候选补丁，系统发行版文件未改；双 worker 零延迟首包、rollback/reinstall 与默认 Service E2E 通过。接收 backend 回包的接口仍须启用 `cnat-input-ip4`。ChatGPT 已于 2026-10-16 对 Goal006 完成**附条件验收**：Stage B/C/D 通过、Stage A 仅限独立 VPP IPv4 TAP + 显式启用 `cnat-input-ip4` 的候选路径。源码共享 IPv4/IPv6、其他 ingress 和 session aging/长期并发仍未普适验证；不得声称生产级或全部场景修复。具体以 `docs/goals/006-cnat-multiworker-hardening-and-release.md` 的正式验收与 `results/goal006/README.md` 为准。
+
+---
+
+## 20. 2026-10-16 正式封版规则（最高优先级的当前状态）
+
+用户明确要求将本项目**封版**，版本标识 **v0.1.0 实验/学习版**。本节取代上方 2026-10-09/10-15 关于“当前 Goal”、“自动连续开发”以及“待 ChatGPT 验收”的过期执行状态；上方项目架构、安全、版本、学习和 Git 要求继续有效。
+
+- **当前无待开发 Goal。** Goal001～006 均完成主要功能；Goal006 已于 2026-10-16 获 ChatGPT **附条件验收**，范围与限制见 `docs/goals/006-cnat-multiworker-hardening-and-release.md`、`docs/RELEASE-v0.1.0.md`。
+- 固定归档分支 `release/v0.1.0` **不得修改或强制移动**（这是协作约定，不是 GitHub 权限保护或 Git tag）。不得主动新建 Goal007、开发新功能、改动封版代码、升级 VPP/GoVPP/Kubernetes、重启 live VPP 或改变宿主网络/真实集群。
+- Codex 在未来学习/讲解任务中只能执行只读源码查阅、文档整理和无需网络变更的分析；修改代码、运行破坏性集成测试或维护补丁均需用户新的明确授权，且必须先阅读封版限制与本节。
+- Goal006 一行 CNAT 补丁依赖显式 `cnat-input-ip4`；未覆盖 IPv6、任意 ingress、长期 Session aging/scanner 或生产级并发。不得夸大实验范围或性能结论。
+- 归档快照、证据、CI、实验安全与后续学习路线，详见 `docs/RELEASE-v0.1.0.md`。
